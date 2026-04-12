@@ -2,6 +2,7 @@
   "name": "list-picker",
   "private": true,
   "version": "0.0.0",
+  "packageManager": "npm@11.6.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
