@@ -5,7 +5,6 @@ A React SPA for browsing a public Plex shared list, filtering it, and picking a 
 ## What it does
 
 - Loads a public Plex list from a `watch.plex.tv` share link
-- Loads a public Plex list from a `watch.plex.tv` share link
 - Filters by search text, media type, release state, genre, and minimum critic rating
 - Supports shared-list-friendly sort orders
 - Lets you make a manual active pick or reroll a random choice from the filtered results
@@ -31,10 +30,10 @@ The production files are written to `dist/`.
 
 For shared Plex lists from `watch.plex.tv`, a same-origin proxy is still required in production because Plex does not allow the browser to fetch those pages cross-origin from an arbitrary static host, and Plex’s paginated fragment API requires a valid token.
 
-If you are deploying under a subpath such as `/plex/`, build with:
+If you are deploying under a subpath such as `/plexlists/`, build with:
 
 ```bash
-BASE_PATH=/plex/ npm run build
+BASE_PATH=/plexlists/ npm run build
 ```
 
 ## Required setup
@@ -48,13 +47,20 @@ The browser never asks for or stores the token. If you deploy this somewhere oth
 
 ## GitHub Pages
 
-A GitHub Actions workflow is included to publish the static frontend to GitHub Pages with `BASE_PATH=/plex/`.
+A GitHub Actions workflow is included to publish the static frontend to GitHub Pages with `BASE_PATH=/plexlists/`.
 
-That deploy only publishes the SPA. The app still needs a same-origin `/api/plex-proxy` endpoint with `PLEX_TOKEN` configured, so GitHub Pages by itself is not enough for the full Plex integration.
+That workflow also packages the built files into `/plexlists/` inside the final Pages artifact so a custom domain can serve this repo from `https://apps.geddesworks.com/plexlists/` instead of from the domain root.
 
-If you want to serve this from `apps.geddesworks.com/plex`, the likely shape is:
+The app still needs a same-origin `/api/plex-proxy` endpoint with `PLEX_TOKEN` configured, so GitHub Pages by itself is not enough for the full Plex integration.
 
-- GitHub Pages serves the static frontend at `/plex/`
+If you want `apps.geddesworks.com/...` to host multiple apps from separate repos, do not point that custom domain directly at each individual tool repo. GitHub Pages can only publish one site per domain root. The workable shapes are:
+
+- one shared "apps" site repo that owns `apps.geddesworks.com` and contains each tool at a subdirectory such as `/plexlists/`
+- Cloudflare or another reverse proxy in front of multiple per-repo deployments
+
+If you want to serve this specific app from `apps.geddesworks.com/plexlists/`, the likely shape is:
+
+- GitHub Pages serves the static frontend at `/plexlists/`
 - Cloudflare handles `apps.geddesworks.com`
 - A Cloudflare Worker or other same-origin backend handles `/api/plex-proxy`
 

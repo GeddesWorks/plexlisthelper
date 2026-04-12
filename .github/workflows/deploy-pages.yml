@@ -32,9 +32,11 @@ jobs:
         run: npm ci
 
       - name: Build site
-        run: npm run build
+        run: npm run build:pages
         env:
-          BASE_PATH: /plex/
+          APP_NAME: Plex List Picker
+          BASE_PATH: /plexlists/
+          DEPLOY_SUBDIR: plexlists
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
