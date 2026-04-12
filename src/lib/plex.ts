@@ -1,3 +1,4 @@
+import { Client, ExecutionMethod, Functions } from 'appwrite'
 import type { PlexSettings } from './storage'
 
 export type PlexMediaType = 'movie' | 'show'
@@ -42,110 +43,42 @@ export type WatchlistFilters = {
   minRating: number
 }
 
+export type SharedListResult = {
+  items: PlexWatchlistItem[]
+  warnings: string[]
+}
+
 const METADATA_BASE_URL = 'https://metadata.provider.plex.tv'
-const PUBLIC_LIST_METADATA_BATCH_SIZE = 20
+const DEFAULT_APPWRITE_ENDPOINT = 'https://sfo.cloud.appwrite.io/v1'
+const DEFAULT_APPWRITE_PROJECT_ID = '69876eae003275d80ff8'
+const DEFAULT_APPWRITE_FUNCTION_ID = 'plexlists_scraper'
 
-function plexHeaders() {
-  return {
-    Accept: 'application/xml',
-    'X-Plex-Product': 'Plex List Picker',
-    'X-Plex-Client-Identifier': 'plex-list-picker-spa',
-    'X-Plex-Version': '1.0.0',
-    'X-Plex-Platform': 'Web',
-    'X-Plex-Platform-Version': window.navigator.userAgent,
-  }
+const APPWRITE_ENDPOINT = (
+  import.meta.env.VITE_APPWRITE_ENDPOINT?.trim() || DEFAULT_APPWRITE_ENDPOINT
+).replace(/\/+$/, '')
+const APPWRITE_PROJECT_ID =
+  import.meta.env.VITE_APPWRITE_PROJECT_ID?.trim() || DEFAULT_APPWRITE_PROJECT_ID
+const APPWRITE_FUNCTION_ID =
+  import.meta.env.VITE_APPWRITE_FUNCTION_ID?.trim() || DEFAULT_APPWRITE_FUNCTION_ID
+
+const appwriteClient = new Client()
+  .setEndpoint(APPWRITE_ENDPOINT)
+  .setProject(APPWRITE_PROJECT_ID)
+
+const appwriteFunctions = new Functions(appwriteClient)
+
+type AppwriteExecution = {
+  status?: string
+  responseStatusCode?: number
+  responseBody?: string
+  errors?: string
 }
 
-async function fetchThroughProxy(url: URL, headers: HeadersInit) {
-  const proxyUrl = new URL('/api/plex-proxy', window.location.origin)
-  proxyUrl.searchParams.set('url', url.toString())
-
-  return fetch(proxyUrl, {
-    headers,
-  })
-}
-
-function isGatewayTimeout(response: Response) {
-  return response.status === 524 || response.status === 504
-}
-
-function readText(node: Element, attribute: string) {
-  return node.getAttribute(attribute)?.trim() ?? ''
-}
-
-function readNumber(node: Element, attribute: string) {
-  const rawValue = node.getAttribute(attribute)
-  if (!rawValue) {
-    return null
-  }
-
-  const parsed = Number(rawValue)
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-function readDate(node: Element, attribute: string) {
-  const rawValue = node.getAttribute(attribute)?.trim()
-  if (!rawValue) {
-    return ''
-  }
-
-  return Number.isFinite(Number(rawValue))
-    ? new Date(Number(rawValue) * 1000).toISOString()
-    : rawValue
-}
-
-function uniqueGenres(node: Element) {
-  return [...node.querySelectorAll('Genre')]
-    .map((genreNode) => readText(genreNode, 'tag'))
-    .filter(Boolean)
-}
-
-function parseWatchlistItem(node: Element): PlexWatchlistItem | null {
-  const type = readText(node, 'type')
-
-  if (type !== 'movie' && type !== 'show') {
-    return null
-  }
-
-  const title = readText(node, 'title')
-  const ratingKey = readText(node, 'ratingKey')
-
-  if (!title || !ratingKey) {
-    return null
-  }
-
-  return {
-    id: `${type}-${ratingKey}`,
-    ratingKey,
-    guid: readText(node, 'guid'),
-    type,
-    title,
-    titleSort: readText(node, 'titleSort') || title,
-    year: readNumber(node, 'year'),
-    summary: readText(node, 'summary'),
-    tagline: readText(node, 'tagline'),
-    studio: readText(node, 'studio'),
-    contentRating: readText(node, 'contentRating'),
-    durationMinutes: (() => {
-      const duration = readNumber(node, 'duration')
-      return duration ? Math.round(duration / 60000) : null
-    })(),
-    childCount:
-      readNumber(node, 'childCount') ??
-      readNumber(node, 'leafCount') ??
-      readNumber(node, 'viewedLeafCount'),
-    thumb: readText(node, 'thumb'),
-    art: readText(node, 'art'),
-    genres: uniqueGenres(node),
-    rating: readNumber(node, 'rating'),
-    audienceRating: readNumber(node, 'audienceRating'),
-    originallyAvailableAt: readDate(node, 'originallyAvailableAt'),
-    watchlistedAt: readDate(node, 'watchlistedAt'),
-  }
-}
-
-function itemElements(document: Document) {
-  return [...document.querySelectorAll('Video, Directory, Metadata')]
+type ScraperPayload = {
+  ok?: boolean
+  items?: PlexWatchlistItem[]
+  warnings?: string[]
+  error?: string
 }
 
 function buildSharedListUrl(settings: PlexSettings) {
@@ -155,396 +88,112 @@ function buildSharedListUrl(settings: PlexSettings) {
     throw new Error('Paste a public Plex share link to load a list.')
   }
 
-  if (/^https?:\/\//i.test(sharedListUrl)) {
-    return new URL(sharedListUrl)
+  const nextUrl = /^https?:\/\//i.test(sharedListUrl)
+    ? new URL(sharedListUrl)
+    : new URL(`https://${sharedListUrl}`)
+
+  if (nextUrl.hostname !== 'watch.plex.tv') {
+    throw new Error('Use a public watch.plex.tv share link.')
   }
 
-  return new URL(`https://${sharedListUrl}`)
+  return nextUrl
 }
 
-function parseItemsResponse(responseText: string) {
-  const trimmed = responseText.trim()
+async function requestScraperExecution(shareUrl: string) {
+  try {
+    return (await appwriteFunctions.createExecution({
+      functionId: APPWRITE_FUNCTION_ID,
+      async: false,
+      body: JSON.stringify({ url: shareUrl }),
+      method: ExecutionMethod.POST,
+      headers: {
+        'content-type': 'application/json',
+      },
+    })) as AppwriteExecution
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown Appwrite error.'
 
-  if (!trimmed) {
-    return []
-  }
-
-  if (trimmed.startsWith('{')) {
-    const parsedJson = JSON.parse(trimmed) as {
-      MediaContainer?: { Metadata?: unknown[] }
+    if (!/Failed to fetch/i.test(message)) {
+      throw new Error(`Appwrite execution request failed. ${message}`)
     }
-    const metadataItems = parsedJson.MediaContainer?.Metadata
 
-    if (!Array.isArray(metadataItems)) {
-      return []
-    }
-
-    return metadataItems
-      .map((item) => {
-        const fakeNode = new DOMParser()
-          .parseFromString(
-            `<MediaContainer>${jsonItemToXml(item as Record<string, unknown>)}</MediaContainer>`,
-            'application/xml',
-          )
-          .querySelector('Video, Directory, Metadata')
-
-        return fakeNode ? parseWatchlistItem(fakeNode) : null
-      })
-      .filter((item): item is PlexWatchlistItem => item !== null)
-  }
-
-  if (trimmed.startsWith('<!DOCTYPE html') || trimmed.startsWith('<html')) {
-    return parsePublicListHtml(trimmed).items
-  }
-
-  const parsed = new DOMParser().parseFromString(trimmed, 'application/xml')
-  const parserError = parsed.querySelector('parsererror')
-
-  if (parserError) {
-    throw new Error('Plex returned a response that could not be parsed.')
-  }
-
-  return itemElements(parsed)
-    .map(parseWatchlistItem)
-    .filter((item): item is PlexWatchlistItem => item !== null)
-}
-
-function jsonItemToXml(item: Record<string, unknown>) {
-  const type = typeof item.type === 'string' && item.type === 'show' ? 'Directory' : 'Video'
-  const attrs = Object.entries(item)
-    .filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value))
-    .map(([key, value]) => `${key}="${String(value).replaceAll('"', '&quot;')}"`)
-    .join(' ')
-  const genres = Array.isArray(item.Genre)
-    ? item.Genre.map((genre) => {
-        const tag = typeof genre === 'object' && genre && 'tag' in genre ? String(genre.tag) : ''
-        return tag ? `<Genre tag="${tag.replaceAll('"', '&quot;')}" />` : ''
-      }).join('')
-    : ''
-
-  return `<${type} ${attrs}>${genres}</${type}>`
-}
-
-type PublicListResponse = {
-  items: PlexWatchlistItem[]
-  nextUrl: string
-}
-
-function parsePublicListHtml(html: string) {
-  const decodedFlightStream = decodeNextFlightStream(html)
-  const searchableText = decodedFlightStream || html
-  return parsePublicListResponseText(searchableText)
-}
-
-function parsePublicListResponseText(text: string): PublicListResponse {
-  const markerCandidates = ['"list":[', '\\"list\\":[']
-  const matchedMarker = markerCandidates.find((marker) => text.includes(marker)) ?? ''
-
-  if (!matchedMarker) {
     throw new Error(
-      'The shared Plex list page loaded, but the embedded list data block was not found. Expected a plain or escaped list marker.',
+      'The Appwrite scraper could not be reached. If this site is on a new domain, add it as a Web platform in the quote dump Appwrite project.',
+    )
+  }
+}
+
+function normalizeWarnings(warnings: string[]) {
+  const nextWarnings = new Set<string>()
+  let hasMetadataWarning = false
+
+  for (const warning of warnings) {
+    if (
+      warning.startsWith('Metadata lookup failed') ||
+      warning.startsWith('Metadata lookup threw') ||
+      warning.startsWith('Metadata for ')
+    ) {
+      hasMetadataWarning = true
+      continue
+    }
+
+    nextWarnings.add(warning)
+  }
+
+  if (hasMetadataWarning) {
+    nextWarnings.add(
+      'Some titles only returned basic public metadata, so ratings, genres, or summaries may be missing.',
     )
   }
 
-  const listMarkerIndex = text.indexOf(matchedMarker)
-  const arrayStartIndex = listMarkerIndex + matchedMarker.length - 1
-  const arrayText = extractJsonArray(text, arrayStartIndex)
+  return [...nextWarnings]
+}
 
-  if (!arrayText) {
+function parseScraperExecution(execution: AppwriteExecution): SharedListResult {
+  if (execution.errors) {
+    throw new Error(execution.errors)
+  }
+
+  if (typeof execution.responseStatusCode !== 'number') {
+    throw new Error('Appwrite returned an execution without an HTTP status.')
+  }
+
+  const rawBody = execution.responseBody?.trim() ?? ''
+
+  if (!rawBody) {
     throw new Error(
-      `The shared Plex list page loaded, but the embedded list JSON could not be isolated after marker ${matchedMarker}.`,
+      `Appwrite scraper returned ${execution.responseStatusCode} without a response body.`,
     )
   }
 
-  let parsedItems: Array<{
-    id?: string
-    image?: { url?: string }
-    title?: string
-    subtitle?: string
-    link?: { url?: string }
-  }>
+  let payload: ScraperPayload
 
   try {
-    const normalizedArrayText =
-      matchedMarker.startsWith('\\"') ? arrayText.replace(/\\"/g, '"') : arrayText
-    parsedItems = JSON.parse(normalizedArrayText) as Array<{
-      id?: string
-      image?: { url?: string }
-      title?: string
-      subtitle?: string
-      link?: { url?: string }
-    }>
+    payload = JSON.parse(rawBody) as ScraperPayload
   } catch {
+    throw new Error('Appwrite scraper returned a non-JSON response body.')
+  }
+
+  if (execution.responseStatusCode >= 400 || payload.ok === false) {
     throw new Error(
-      `The shared Plex list page loaded, but the embedded list JSON was not parseable after matching ${matchedMarker}.`,
+      payload.error ?? `Appwrite scraper returned ${execution.responseStatusCode}.`,
     )
   }
 
-  const items = parsedItems.map(mapPublicListItem).filter((item): item is PlexWatchlistItem => item !== null)
-
-  if (!items.length) {
-    throw new Error(
-      `The shared Plex list page loaded, but no usable items were found in the embedded list data (${parsedItems.length} raw entries).`,
-    )
-  }
-
-  const nextUrl = readNextPageUrl(text, matchedMarker.startsWith('\\"'))
-
-  return { items, nextUrl }
-}
-
-function mapPublicListItem(item: {
-  id?: string
-  image?: { url?: string }
-  title?: string
-  subtitle?: string
-  link?: { url?: string }
-}): PlexWatchlistItem | null {
-  const itemPath = item.link?.url ?? ''
-  const title = item.title ?? ''
-  const id = item.id ?? ''
-
-  if (!id || !title || !/^\/(?:movie|show)\//.test(itemPath)) {
-    return null
-  }
-
-  const year = Number(item.subtitle ?? '')
-  const type: PlexMediaType = itemPath.startsWith('/show/') ? 'show' : 'movie'
-
-  return {
-    id: `${type}-${id}`,
-    ratingKey: id,
-    guid: itemPath,
-    type,
-    title,
-    titleSort: title,
-    year: Number.isFinite(year) ? year : null,
-    summary: '',
-    tagline: '',
-    studio: '',
-    contentRating: '',
-    durationMinutes: null,
-    childCount: null,
-    thumb: item.image?.url ?? '',
-    art: item.image?.url ?? '',
-    genres: [],
-    rating: null,
-    audienceRating: null,
-    originallyAvailableAt: Number.isFinite(year) ? `${year}-01-01` : '',
-    watchlistedAt: '',
-  }
-}
-
-function readNextPageUrl(text: string, isEscaped: boolean) {
-  const match = isEscaped
-    ? text.match(/\\"nextUrl\\":\\"([\s\S]*?)\\"/)
-    : text.match(/"nextUrl":"([\s\S]*?)"/)
-
-  if (!match) {
-    return ''
-  }
-
-  const rawValue = match[1]
-  return isEscaped ? rawValue.replace(/\\"/g, '"').replace(/\\\\/g, '\\') : rawValue
-}
-
-function decodeNextFlightStream(html: string) {
-  const chunkPattern = /self\.__next_f\.push\(\[1,"([\s\S]*?)"\]\)<\/script>/g
-  const chunks = [...html.matchAll(chunkPattern)].map((match) => match[1])
-
-  if (!chunks.length) {
-    return ''
-  }
-
-  return chunks
-    .map((chunk) => {
-      try {
-        return JSON.parse(`"${chunk}"`) as string
-      } catch {
-        return chunk
-      }
-    })
-    .join('')
-}
-
-function extractJsonArray(text: string, startIndex: number) {
-  if (text[startIndex] !== '[') {
-    return ''
-  }
-
-  let depth = 0
-  let inString = false
-  let isEscaped = false
-
-  for (let index = startIndex; index < text.length; index += 1) {
-    const char = text[index]
-
-    if (inString) {
-      if (isEscaped) {
-        isEscaped = false
-        continue
-      }
-
-      if (char === '\\') {
-        isEscaped = true
-        continue
-      }
-
-      if (char === '"') {
-        inString = false
-      }
-
-      continue
-    }
-
-    if (char === '"') {
-      inString = true
-      continue
-    }
-
-    if (char === '[') {
-      depth += 1
-      continue
-    }
-
-    if (char === ']') {
-      depth -= 1
-
-      if (depth === 0) {
-        return text.slice(startIndex, index + 1)
-      }
-    }
-  }
-
-  return ''
-}
-
-export async function fetchSharedList(settings: PlexSettings) {
-  const initialUrl = buildSharedListUrl(settings)
-  const itemsById = new Map<string, PlexWatchlistItem>()
-  let nextUrl = initialUrl.toString()
-  let isFirstPage = true
-
-  while (nextUrl) {
-    const response = await fetchThroughProxy(new URL(nextUrl), plexHeaders())
-
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        throw new Error(
-          'The Plex proxy could not access list pagination. Set PLEX_TOKEN on the server that hosts /api/plex-proxy.',
-        )
-      }
-
-      if (itemsById.size > 0 && isGatewayTimeout(response)) {
-        break
-      }
-
-      throw new Error(
-        `Plex custom list request failed with ${response.status} ${response.statusText}.`,
-      )
-    }
-
-    const bodyText = await response.text()
-    const page = isFirstPage
-      ? parsePublicListHtml(bodyText)
-      : parsePublicListFragment(bodyText)
-
-    for (const item of page.items) {
-      itemsById.set(item.id, item)
-    }
-
-    nextUrl = page.nextUrl
-    isFirstPage = false
-  }
-
-  return enrichPublicListItems([...itemsById.values()])
-}
-
-function parsePublicListFragment(bodyText: string) {
-  const trimmed = bodyText.trim()
-
-  if (!trimmed.startsWith('{')) {
-    throw new Error('The Plex custom list fragment returned an unexpected response format.')
-  }
-
-  const parsed = JSON.parse(trimmed) as {
-    content?: Array<{
-      id?: string
-      image?: { url?: string }
-      title?: string
-      subtitle?: string
-      link?: { url?: string }
-    }>
-    pagination?: { nextUrl?: string }
-  }
-
-  const items = Array.isArray(parsed.content)
-    ? parsed.content.map(mapPublicListItem).filter((item): item is PlexWatchlistItem => item !== null)
-    : []
-
-  if (!items.length) {
-    throw new Error('The Plex custom list fragment loaded, but did not contain any usable items.')
+  if (!Array.isArray(payload.items)) {
+    throw new Error('Appwrite scraper returned an unexpected item payload.')
   }
 
   return {
-    items,
-    nextUrl: parsed.pagination?.nextUrl ?? '',
+    items: payload.items,
+    warnings: normalizeWarnings(payload.warnings ?? []),
   }
 }
 
-async function enrichPublicListItems(items: PlexWatchlistItem[]) {
-  if (!items.length) {
-    return items
-  }
-
-  const enrichedItems = new Map(items.map((item) => [item.ratingKey, item]))
-
-  for (let index = 0; index < items.length; index += PUBLIC_LIST_METADATA_BATCH_SIZE) {
-    const batch = items.slice(index, index + PUBLIC_LIST_METADATA_BATCH_SIZE)
-    const batchIds = batch.map((item) => item.ratingKey).filter(Boolean)
-
-    if (!batchIds.length) {
-      continue
-    }
-
-    const metadataUrl = new URL(`${METADATA_BASE_URL}/library/metadata/${batchIds.join(',')}`)
-    const response = await fetchThroughProxy(metadataUrl, plexHeaders())
-
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        throw new Error(
-          'The Plex proxy could not access metadata enrichment. Set PLEX_TOKEN on the server that hosts /api/plex-proxy.',
-        )
-      }
-
-      if (isGatewayTimeout(response)) {
-        continue
-      }
-
-      throw new Error(
-        `Plex metadata request failed with ${response.status} ${response.statusText}.`,
-      )
-    }
-
-    const bodyText = await response.text()
-    const parsedItems = parseItemsResponse(bodyText)
-
-    for (const parsedItem of parsedItems) {
-      const currentItem = enrichedItems.get(parsedItem.ratingKey)
-
-      if (!currentItem) {
-        continue
-      }
-
-      enrichedItems.set(parsedItem.ratingKey, {
-        ...currentItem,
-        ...parsedItem,
-        id: currentItem.id,
-      })
-    }
-  }
-
-  return items.map((item) => enrichedItems.get(item.ratingKey) ?? item)
+export async function fetchSharedList(settings: PlexSettings): Promise<SharedListResult> {
+  const shareUrl = buildSharedListUrl(settings)
+  const execution = await requestScraperExecution(shareUrl.toString())
+  return parseScraperExecution(execution)
 }
 
 export function buildArtworkUrl(path: string) {
@@ -556,9 +205,7 @@ export function buildArtworkUrl(path: string) {
     return path
   }
 
-  const url = new URL('/api/plex-proxy', window.location.origin)
-  url.searchParams.set('url', `${METADATA_BASE_URL}${path}`)
-  return url.toString()
+  return new URL(path, METADATA_BASE_URL).toString()
 }
 
 export function isReleased(item: PlexWatchlistItem) {

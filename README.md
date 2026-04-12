@@ -8,17 +8,31 @@ A React SPA for browsing a public Plex shared list, filtering it, and picking a 
 - Filters by search text, media type, release state, genre, and minimum critic rating
 - Supports shared-list-friendly sort orders
 - Lets you make a manual active pick or reroll a random choice from the filtered results
-- Enriches shared-list entries with Plex metadata so genres, ratings, and summaries work
+- Calls an Appwrite Function to scrape the public share page and enrich what metadata it can
 
 ## Local development
 
 ```bash
 npm install
-export PLEX_TOKEN=your-token
 npm run dev
 ```
 
-The dev server exposes a local proxy endpoint at `/api/plex-proxy` so the app can fetch Plex pages and APIs without browser CORS failures. Set `PLEX_TOKEN` in the server environment before starting Vite so paginated shared lists and metadata enrichment can succeed.
+The app now calls Appwrite directly from the browser. By default it targets:
+
+- endpoint: `https://sfo.cloud.appwrite.io/v1`
+- project: `69876eae003275d80ff8`
+- function: `plexlists_scraper`
+
+You can override those with public Vite env vars before starting Vite:
+
+```bash
+VITE_APPWRITE_ENDPOINT=https://your-region.cloud.appwrite.io/v1
+VITE_APPWRITE_PROJECT_ID=your-project-id
+VITE_APPWRITE_FUNCTION_ID=your-function-id
+npm run dev
+```
+
+If you load the app from a new origin, add that origin as a Web platform in the Appwrite project or the browser will hit Appwrite CORS failures.
 
 ## Production build
 
@@ -28,7 +42,7 @@ npm run build
 
 The production files are written to `dist/`.
 
-For shared Plex lists from `watch.plex.tv`, a same-origin proxy is still required in production because Plex does not allow the browser to fetch those pages cross-origin from an arbitrary static host, and Plex’s paginated fragment API requires a valid token.
+For shared Plex lists from `watch.plex.tv`, the frontend still cannot talk to Plex directly from an arbitrary static host because Plex does not expose those pages cross-origin, and Plex's paginated fragment API still requires a valid token. The Appwrite function exists to bridge that gap.
 
 If you are deploying under a subpath such as `/plexlists/`, build with:
 
@@ -41,9 +55,10 @@ BASE_PATH=/plexlists/ npm run build
 You will need:
 
 - A public Plex list share link
-- A server-side `PLEX_TOKEN` available to the proxy
+- The `plexlists_scraper` Appwrite Function deployed somewhere reachable by the frontend
+- The frontend origin added as a Web platform in that Appwrite project
 
-The browser never asks for or stores the token. If you deploy this somewhere other than the built-in Vite dev or preview server, expose an equivalent same-origin `/api/plex-proxy` endpoint and inject the token there.
+The current function is intentionally tokenless. It can scrape the first public page of a shared list and then enrich individual items when Plex exposes that metadata anonymously. Plex still blocks anonymous pagination for longer lists, so this app currently shows the first publicly retrievable page rather than the complete list.
 
 ## GitHub Pages
 
@@ -51,7 +66,7 @@ A GitHub Actions workflow is included to publish the static frontend to GitHub P
 
 That workflow also packages the built files into `/plexlists/` inside the final Pages artifact so a custom domain can serve this repo from `https://apps.geddesworks.com/plexlists/` instead of from the domain root.
 
-The app still needs a same-origin `/api/plex-proxy` endpoint with `PLEX_TOKEN` configured, so GitHub Pages by itself is not enough for the full Plex integration.
+GitHub Pages only serves the React app. The data requests still go to Appwrite, so Pages by itself is not the backend.
 
 If you want `apps.geddesworks.com/...` to host multiple apps from separate repos, do not point that custom domain directly at each individual tool repo. GitHub Pages can only publish one site per domain root. The workable shapes are:
 
@@ -61,7 +76,7 @@ If you want `apps.geddesworks.com/...` to host multiple apps from separate repos
 If you want to serve this specific app from `apps.geddesworks.com/plexlists/`, the likely shape is:
 
 - GitHub Pages serves the static frontend at `/plexlists/`
-- Cloudflare handles `apps.geddesworks.com`
-- A Cloudflare Worker or other same-origin backend handles `/api/plex-proxy`
+- Cloudflare or DNS handles `apps.geddesworks.com`
+- Appwrite handles the `plexlists_scraper` function backend
 
-Without that proxy, the deployed page will load but Plex requests will fail.
+Without the Appwrite function, the deployed page will load but list requests will fail.

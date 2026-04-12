@@ -2,7 +2,7 @@ const METADATA_BASE_URL = 'https://metadata.provider.plex.tv'
 const WATCH_BASE_URL = 'https://watch.plex.tv'
 const CORS_HEADERS = {
   'access-control-allow-origin': '*',
-  'access-control-allow-methods': 'GET, OPTIONS',
+  'access-control-allow-methods': 'GET, POST, OPTIONS',
   'access-control-allow-headers': 'content-type',
 }
 
@@ -300,29 +300,68 @@ async function enrichItems(items, warnings, log) {
   return enrichedItems
 }
 
+function readShareUrlFromBody(body) {
+  if (!body) {
+    return ''
+  }
+
+  if (typeof body === 'string') {
+    const trimmedBody = body.trim()
+
+    if (!trimmedBody) {
+      return ''
+    }
+
+    try {
+      return readShareUrlFromBody(JSON.parse(trimmedBody))
+    } catch {
+      return trimmedBody
+    }
+  }
+
+  if (typeof body !== 'object') {
+    return ''
+  }
+
+  if (typeof body.url === 'string') {
+    return body.url
+  }
+
+  if (typeof body.shareUrl === 'string') {
+    return body.shareUrl
+  }
+
+  if (typeof body.sharedListUrl === 'string') {
+    return body.sharedListUrl
+  }
+
+  return ''
+}
+
 export default async ({ req, res, log, error }) => {
   if (req.method === 'OPTIONS') {
     return res.text('', 204, CORS_HEADERS)
   }
 
-  if (req.method !== 'GET') {
+  if (req.method !== 'GET' && req.method !== 'POST') {
     return res.json(
       {
         ok: false,
-        error: 'Only GET and OPTIONS are supported.',
+        error: 'Only GET, POST, and OPTIONS are supported.',
       },
       405,
       CORS_HEADERS,
     )
   }
 
-  const rawShareUrl = req.query.url ?? req.query.shareUrl
+  const rawShareUrl = req.query.url ?? req.query.shareUrl ?? readShareUrlFromBody(req.body)
 
   if (!rawShareUrl) {
     return res.json(
       {
         ok: false,
-        error: 'Provide a watch.plex.tv share link in the url query parameter.',
+        error:
+          'Provide a watch.plex.tv share link in the url query parameter or in a JSON POST body.',
       },
       400,
       CORS_HEADERS,

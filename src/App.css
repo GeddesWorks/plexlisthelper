@@ -305,6 +305,23 @@
   background: rgba(146, 38, 22, 0.25);
 }
 
+.warning-banner {
+  margin: 0 0 1rem;
+  border: 1px solid rgba(242, 179, 111, 0.3);
+  border-radius: 18px;
+  padding: 0.9rem 1rem;
+  color: #ffe1b8;
+  background: rgba(123, 73, 17, 0.22);
+}
+
+.warning-banner p {
+  margin: 0;
+}
+
+.warning-banner p + p {
+  margin-top: 0.5rem;
+}
+
 .empty-state {
   padding: 2rem 0 0.5rem;
   text-align: center;

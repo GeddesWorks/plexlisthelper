@@ -7,6 +7,7 @@ import {
   isReleased,
   pickRandomItem,
   sortItems,
+  type SharedListResult,
   type PlexWatchlistItem,
   type SortOption,
   type WatchlistFilters,
@@ -78,8 +79,7 @@ function ratingLabel(value: number | null) {
   return value ? `${value.toFixed(1)}/10` : 'No score'
 }
 
-async function requestWatchlist(settings: PlexSettings, sort: SortOption) {
-  void sort
+async function requestWatchlist(settings: PlexSettings): Promise<SharedListResult> {
   return fetchSharedList(settings)
 }
 
@@ -92,6 +92,7 @@ function App() {
   const [selectedItem, setSelectedItem] = useState<PlexWatchlistItem | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [warnings, setWarnings] = useState<string[]>([])
   const [lastUpdated, setLastUpdated] = useState('')
 
   useEffect(() => {
@@ -104,6 +105,7 @@ function App() {
     if (!settings.sharedListUrl) {
       setItems([])
       setSelectedItem(null)
+      setWarnings([])
       setLastUpdated('')
       setError('Paste a public Plex share link to load a list.')
       return
@@ -114,10 +116,12 @@ function App() {
       setError('')
 
       try {
-        const nextItems = await requestWatchlist(settings, sort)
+        const nextResult = await requestWatchlist(settings)
+        const nextItems = nextResult.items
 
         startTransition(() => {
           setItems(nextItems)
+          setWarnings(nextResult.warnings)
           setSelectedItem((currentSelection) => {
             if (!currentSelection) {
               return null
@@ -128,6 +132,7 @@ function App() {
           setLastUpdated(new Date().toISOString())
         })
       } catch (caughtError) {
+        setWarnings([])
         setError(
           caughtError instanceof Error
             ? caughtError.message
@@ -139,7 +144,7 @@ function App() {
     }
 
     void loadWatchlist()
-  }, [settings, sort])
+  }, [settings])
 
   const filteredItems = sortItems(filterItems(items, filters), sort)
   const availableGenres = [...new Set(items.flatMap((item) => item.genres))]
@@ -177,6 +182,7 @@ function App() {
     if (!nextSettings.sharedListUrl) {
       setItems([])
       setSelectedItem(null)
+      setWarnings([])
       setLastUpdated('')
       setError('Paste a public Plex share link to load a list.')
     }
@@ -197,12 +203,13 @@ function App() {
           <p className="eyebrow">Plex Shared Lists</p>
           <h1>Load a public Plex list, filter it down, and let the app pick tonight&apos;s watch.</h1>
           <p className="hero-text">
-            This app is built around public Plex share links. Paste a shared list URL, browse the
-            full list with filters, and reroll a random pick from the current results.
+            This app loads public Plex share links through an Appwrite scraper function. Paste a
+            shared list URL, browse the items that are publicly retrievable, and reroll a random
+            pick from the current results.
           </p>
           <div className="stat-row">
             <article className="stat-card">
-              <span className="stat-label">List items</span>
+              <span className="stat-label">Loaded items</span>
               <strong>{items.length}</strong>
             </article>
             <article className="stat-card">
@@ -227,8 +234,8 @@ function App() {
                 <h2>{selectedItem.title}</h2>
                 <p className="picker-meta">
                   {selectedItem.type === 'movie' ? 'Movie' : 'Series'}
-                  {selectedItem.year ? ` • ${selectedItem.year}` : ''}
-                  {` • ${formatDuration(selectedItem.durationMinutes, selectedItem.type, selectedItem.childCount)}`}
+                  {selectedItem.year ? ` - ${selectedItem.year}` : ''}
+                  {` - ${formatDuration(selectedItem.durationMinutes, selectedItem.type, selectedItem.childCount)}`}
                 </p>
                 <p className="picker-summary">
                   {selectedItem.summary || 'No summary came back from Plex for this title.'}
@@ -281,8 +288,9 @@ function App() {
           </label>
 
           <p className="panel-note">
-            The browser only stores the share link. Full pagination and metadata still rely on the
-            same-origin Plex proxy being configured with a server-side `PLEX_TOKEN`.
+            The browser only stores the share link. Public list data now comes from the Appwrite
+            function in the quote dump project, and Plex still limits anonymous pagination. If this
+            site runs on a new domain, add that origin as a Web platform in Appwrite.
           </p>
         </form>
 
@@ -410,6 +418,14 @@ function App() {
           </div>
         </div>
 
+        {warnings.length ? (
+          <div className="warning-banner">
+            {warnings.map((warning) => (
+              <p key={warning}>{warning}</p>
+            ))}
+          </div>
+        ) : null}
+
         {error ? <p className="error-banner">{error}</p> : null}
 
         {!loading && !error && !filteredItems.length ? (
@@ -453,7 +469,7 @@ function App() {
                   </div>
 
                   <p className="card-meta">
-                    {item.year ? `${item.year} • ` : ''}
+                    {item.year ? `${item.year} - ` : ''}
                     {formatDuration(item.durationMinutes, item.type, item.childCount)}
                   </p>
 
