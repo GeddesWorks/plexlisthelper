@@ -201,11 +201,10 @@ function App() {
       <section className="hero-panel">
         <div className="hero-copy">
           <p className="eyebrow">Plex Shared Lists</p>
-          <h1>Load a public Plex list, filter it down, and let the app pick tonight&apos;s watch.</h1>
+          <h1>Load a public Plex list, refine it fast, and pick something worth watching.</h1>
           <p className="hero-text">
-            This app loads public Plex share links through an Appwrite scraper function. Paste a
-            shared list URL, browse the items that are publicly retrievable, and reroll a random
-            pick from the current results.
+            Paste a share link, browse every title from the list, then reroll a random pick from
+            your current filtered results.
           </p>
           <div className="stat-row">
             <article className="stat-card">
@@ -273,7 +272,7 @@ function App() {
               <h2>Public share link</h2>
             </div>
             <button className="ghost-button" type="submit">
-              Save and refresh
+              Load list
             </button>
           </div>
 
@@ -288,9 +287,9 @@ function App() {
           </label>
 
           <p className="panel-note">
-            The browser only stores the share link. Public list data now comes from the Appwrite
-            function in the quote dump project, and Plex still limits anonymous pagination. If this
-            site runs on a new domain, add that origin as a Web platform in Appwrite.
+            The share link is saved in your browser only. List data is fetched through the Appwrite
+            scraper function. If you move this app to a new domain, add that origin as a Web
+            platform in Appwrite.
           </p>
         </form>
 
@@ -449,7 +448,7 @@ function App() {
                   onClick={() => setSelectedItem(item)}
                   type="button"
                 >
-                  Make active pick
+                  Set as active pick
                 </button>
 
                 <div className="poster-frame">

@@ -58,7 +58,7 @@ You will need:
 - The `plexlists_scraper` Appwrite Function deployed somewhere reachable by the frontend
 - The frontend origin added as a Web platform in that Appwrite project
 
-The current function is intentionally tokenless. It can scrape the first public page of a shared list and then enrich individual items when Plex exposes that metadata anonymously. Plex still blocks anonymous pagination for longer lists, so this app currently shows the first publicly retrievable page rather than the complete list.
+The current function is tokenless for the share-link request itself, then uses server-side pagination attempts to pull additional pages from Plex's list fragment endpoints. Metadata enrichment is still anonymous and can fail for some titles.
 
 ## GitHub Pages
 

@@ -1,0 +1,817 @@
+- main [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - paragraph [ref=e6]: Plex Shared Lists
+      - heading "Load a public Plex list, refine it fast, and pick something worth watching." [level=1] [ref=e7]
+      - paragraph [ref=e8]: Paste a share link, browse every title from the list, then reroll a random pick from your current filtered results.
+      - generic [ref=e9]:
+        - article [ref=e10]:
+          - text: Loaded items
+          - strong [ref=e11]: "28"
+        - article [ref=e12]:
+          - text: Released now
+          - strong [ref=e13]: "28"
+        - article [ref=e14]:
+          - text: Shown after filters
+          - strong [ref=e15]: "28"
+    - generic [ref=e17]:
+      - paragraph [ref=e18]: Random picker
+      - heading "No pick yet" [level=2] [ref=e19]
+      - paragraph [ref=e20]: Use the filters below, then pull a random title from the current results.
+      - button "Pick for me" [ref=e21] [cursor=pointer]
+  - generic [ref=e22]:
+    - generic [ref=e23]:
+      - generic [ref=e24]:
+        - generic [ref=e25]:
+          - paragraph [ref=e26]: List Source
+          - heading "Public share link" [level=2] [ref=e27]
+        - button "Load list" [active] [ref=e28] [cursor=pointer]
+      - generic [ref=e29]:
+        - generic [ref=e30]: Plex share link
+        - textbox "Plex share link" [ref=e31]:
+          - /placeholder: https://watch.plex.tv/u/username/lists/your-list-slug
+          - text: https://watch.plex.tv/u/GeddesWorks/lists/Nw7q-the-real-list
+      - paragraph [ref=e32]: The share link is saved in your browser only. List data is fetched through the Appwrite scraper function. If you move this app to a new domain, add that origin as a Web platform in Appwrite.
+    - generic [ref=e33]:
+      - generic [ref=e34]:
+        - generic [ref=e35]:
+          - paragraph [ref=e36]: Filters
+          - heading "Shape the picker pool" [level=2] [ref=e37]
+        - button "Reset filters" [ref=e38] [cursor=pointer]
+      - generic [ref=e39]:
+        - generic [ref=e40]:
+          - generic [ref=e41]: Search
+          - searchbox "Search" [ref=e42]
+        - generic [ref=e43]:
+          - generic [ref=e44]: Type
+          - combobox "Type" [ref=e45]:
+            - option "Movies and shows" [selected]
+            - option "Movies only"
+            - option "Shows only"
+        - generic [ref=e46]:
+          - generic [ref=e47]: Release state
+          - combobox "Release state" [ref=e48]:
+            - option "Everything" [selected]
+            - option "Released"
+            - option "Upcoming"
+        - generic [ref=e49]:
+          - generic [ref=e50]: Genre
+          - combobox "Genre" [ref=e51]:
+            - option "All genres" [selected]
+            - option "Drama"
+            - option "Mystery"
+            - option "Science Fiction"
+        - generic [ref=e52]:
+          - generic [ref=e53]: Minimum critic rating
+          - combobox "Minimum critic rating" [ref=e54]:
+            - option "Any rating" [selected]
+            - option "6.0+"
+            - option "7.0+"
+            - option "8.0+"
+            - option "9.0+"
+        - generic [ref=e55]:
+          - generic [ref=e56]: Sort
+          - combobox "Sort" [ref=e57]:
+            - option "Shared list order" [selected]
+            - option "Title A-Z"
+            - option "Title Z-A"
+            - option "Newest release"
+            - option "Oldest release"
+            - option "Highest critic rating"
+            - option "Lowest critic rating"
+  - generic [ref=e58]:
+    - generic [ref=e59]:
+      - generic [ref=e60]:
+        - paragraph [ref=e61]: List Viewer
+        - heading "Current shared list" [level=2] [ref=e62]
+      - generic [ref=e65]: Updated Apr 13, 2026
+    - paragraph [ref=e67]: Some titles only returned basic public metadata.
+    - generic [ref=e68]:
+      - article [ref=e69]:
+        - button "Set as active pick" [ref=e70] [cursor=pointer]
+        - generic [ref=e72]: SA
+        - generic [ref=e73]:
+          - generic [ref=e74]:
+            - heading "Sample Title 1" [level=3] [ref=e75]
+            - generic [ref=e76]: Movie
+          - paragraph [ref=e77]: 2005 - 1h 29m
+          - generic [ref=e78]:
+            - generic [ref=e79]: Critic 6.7/10
+            - generic [ref=e80]: Audience 6.2/10
+          - paragraph [ref=e81]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e82]:
+            - generic [ref=e83]: Drama
+            - generic [ref=e84]: Science Fiction
+            - generic [ref=e85]: Mystery
+          - generic [ref=e86]:
+            - generic [ref=e87]:
+              - term [ref=e88]: Release
+              - definition [ref=e89]: Feb 14, 2021
+            - generic [ref=e90]:
+              - term [ref=e91]: Studio
+              - definition [ref=e92]: Studio 1
+            - generic [ref=e93]:
+              - term [ref=e94]: Rated
+              - definition [ref=e95]: R
+      - article [ref=e96]:
+        - button "Set as active pick" [ref=e97] [cursor=pointer]
+        - generic [ref=e99]: SA
+        - generic [ref=e100]:
+          - generic [ref=e101]:
+            - heading "Sample Title 2" [level=3] [ref=e102]
+            - generic [ref=e103]: Movie
+          - paragraph [ref=e104]: 2006 - 1h 30m
+          - generic [ref=e105]:
+            - generic [ref=e106]: Critic 7.4/10
+            - generic [ref=e107]: Audience 6.9/10
+          - paragraph [ref=e108]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e109]:
+            - generic [ref=e110]: Drama
+            - generic [ref=e111]: Science Fiction
+            - generic [ref=e112]: Mystery
+          - generic [ref=e113]:
+            - generic [ref=e114]:
+              - term [ref=e115]: Release
+              - definition [ref=e116]: Mar 14, 2022
+            - generic [ref=e117]:
+              - term [ref=e118]: Studio
+              - definition [ref=e119]: Studio 2
+            - generic [ref=e120]:
+              - term [ref=e121]: Rated
+              - definition [ref=e122]: PG-13
+      - article [ref=e123]:
+        - button "Set as active pick" [ref=e124] [cursor=pointer]
+        - generic [ref=e126]: SA
+        - generic [ref=e127]:
+          - generic [ref=e128]:
+            - heading "Sample Title 3" [level=3] [ref=e129]
+            - generic [ref=e130]: Show
+          - paragraph [ref=e131]: 2007 - 10 episodes
+          - generic [ref=e132]:
+            - generic [ref=e133]: Critic 8.1/10
+            - generic [ref=e134]: Audience 7.6/10
+          - paragraph [ref=e135]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e136]:
+            - generic [ref=e137]: Drama
+            - generic [ref=e138]: Science Fiction
+            - generic [ref=e139]: Mystery
+          - generic [ref=e140]:
+            - generic [ref=e141]:
+              - term [ref=e142]: Release
+              - definition [ref=e143]: Apr 14, 2023
+            - generic [ref=e144]:
+              - term [ref=e145]: Studio
+              - definition [ref=e146]: Studio 3
+            - generic [ref=e147]:
+              - term [ref=e148]: Rated
+              - definition [ref=e149]: R
+      - article [ref=e150]:
+        - button "Set as active pick" [ref=e151] [cursor=pointer]
+        - generic [ref=e153]: TH
+        - generic [ref=e154]:
+          - generic [ref=e155]:
+            - heading "The Extremely Long Showcase Title 4 With A Subtitle That Must Wrap Cleanly" [level=3] [ref=e156]
+            - generic [ref=e157]: Movie
+          - paragraph [ref=e158]: 2008 - 1h 32m
+          - generic [ref=e159]:
+            - generic [ref=e160]: Critic 8.8/10
+            - generic [ref=e161]: Audience 8.3/10
+          - paragraph [ref=e162]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e163]:
+            - generic [ref=e164]: Drama
+            - generic [ref=e165]: Science Fiction
+            - generic [ref=e166]: Mystery
+          - generic [ref=e167]:
+            - generic [ref=e168]:
+              - term [ref=e169]: Release
+              - definition [ref=e170]: May 14, 2024
+            - generic [ref=e171]:
+              - term [ref=e172]: Studio
+              - definition [ref=e173]: Studio 4
+            - generic [ref=e174]:
+              - term [ref=e175]: Rated
+              - definition [ref=e176]: PG-13
+      - article [ref=e177]:
+        - button "Set as active pick" [ref=e178] [cursor=pointer]
+        - generic [ref=e180]: SA
+        - generic [ref=e181]:
+          - generic [ref=e182]:
+            - heading "Sample Title 5" [level=3] [ref=e183]
+            - generic [ref=e184]: Movie
+          - paragraph [ref=e185]: 2009 - 1h 33m
+          - generic [ref=e186]:
+            - generic [ref=e187]: Critic 6.0/10
+            - generic [ref=e188]: Audience 9.0/10
+          - paragraph [ref=e189]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e190]:
+            - generic [ref=e191]: Drama
+            - generic [ref=e192]: Science Fiction
+            - generic [ref=e193]: Mystery
+          - generic [ref=e194]:
+            - generic [ref=e195]:
+              - term [ref=e196]: Release
+              - definition [ref=e197]: Jun 14, 2025
+            - generic [ref=e198]:
+              - term [ref=e199]: Studio
+              - definition [ref=e200]: Very Long Studio Name 5 Global Distribution Group
+            - generic [ref=e201]:
+              - term [ref=e202]: Rated
+              - definition [ref=e203]: R
+      - article [ref=e204]:
+        - button "Set as active pick" [ref=e205] [cursor=pointer]
+        - generic [ref=e207]: SA
+        - generic [ref=e208]:
+          - generic [ref=e209]:
+            - heading "Sample Title 6" [level=3] [ref=e210]
+            - generic [ref=e211]: Show
+          - paragraph [ref=e212]: 2010 - 13 episodes
+          - generic [ref=e213]:
+            - generic [ref=e214]: Critic 6.7/10
+            - generic [ref=e215]: Audience 5.5/10
+          - paragraph [ref=e216]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e217]:
+            - generic [ref=e218]: Drama
+            - generic [ref=e219]: Science Fiction
+            - generic [ref=e220]: Mystery
+          - generic [ref=e221]:
+            - generic [ref=e222]:
+              - term [ref=e223]: Release
+              - definition [ref=e224]: Jul 14, 2020
+            - generic [ref=e225]:
+              - term [ref=e226]: Studio
+              - definition [ref=e227]: Studio 6
+            - generic [ref=e228]:
+              - term [ref=e229]: Rated
+              - definition [ref=e230]: PG-13
+      - article [ref=e231]:
+        - button "Set as active pick" [ref=e232] [cursor=pointer]
+        - generic [ref=e234]: SA
+        - generic [ref=e235]:
+          - generic [ref=e236]:
+            - heading "Sample Title 7" [level=3] [ref=e237]
+            - generic [ref=e238]: Movie
+          - paragraph [ref=e239]: 2011 - 1h 35m
+          - generic [ref=e240]:
+            - generic [ref=e241]: Critic 7.4/10
+            - generic [ref=e242]: Audience 6.2/10
+          - paragraph [ref=e243]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e244]:
+            - generic [ref=e245]: Drama
+            - generic [ref=e246]: Science Fiction
+            - generic [ref=e247]: Mystery
+          - generic [ref=e248]:
+            - generic [ref=e249]:
+              - term [ref=e250]: Release
+              - definition [ref=e251]: Aug 14, 2021
+            - generic [ref=e252]:
+              - term [ref=e253]: Studio
+              - definition [ref=e254]: Studio 7
+            - generic [ref=e255]:
+              - term [ref=e256]: Rated
+              - definition [ref=e257]: R
+      - article [ref=e258]:
+        - button "Set as active pick" [ref=e259] [cursor=pointer]
+        - generic [ref=e261]: TH
+        - generic [ref=e262]:
+          - generic [ref=e263]:
+            - heading "The Extremely Long Showcase Title 8 With A Subtitle That Must Wrap Cleanly" [level=3] [ref=e264]
+            - generic [ref=e265]: Movie
+          - paragraph [ref=e266]: 2012 - 1h 36m
+          - generic [ref=e267]:
+            - generic [ref=e268]: Critic 8.1/10
+            - generic [ref=e269]: Audience 6.9/10
+          - paragraph [ref=e270]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e271]:
+            - generic [ref=e272]: Drama
+            - generic [ref=e273]: Science Fiction
+            - generic [ref=e274]: Mystery
+          - generic [ref=e275]:
+            - generic [ref=e276]:
+              - term [ref=e277]: Release
+              - definition [ref=e278]: Sep 14, 2022
+            - generic [ref=e279]:
+              - term [ref=e280]: Studio
+              - definition [ref=e281]: Studio 8
+            - generic [ref=e282]:
+              - term [ref=e283]: Rated
+              - definition [ref=e284]: PG-13
+      - article [ref=e285]:
+        - button "Set as active pick" [ref=e286] [cursor=pointer]
+        - generic [ref=e288]: SA
+        - generic [ref=e289]:
+          - generic [ref=e290]:
+            - heading "Sample Title 9" [level=3] [ref=e291]
+            - generic [ref=e292]: Show
+          - paragraph [ref=e293]: 2013 - 16 episodes
+          - generic [ref=e294]:
+            - generic [ref=e295]: Critic 8.8/10
+            - generic [ref=e296]: Audience 7.6/10
+          - paragraph [ref=e297]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e298]:
+            - generic [ref=e299]: Drama
+            - generic [ref=e300]: Science Fiction
+            - generic [ref=e301]: Mystery
+          - generic [ref=e302]:
+            - generic [ref=e303]:
+              - term [ref=e304]: Release
+              - definition [ref=e305]: Jan 14, 2023
+            - generic [ref=e306]:
+              - term [ref=e307]: Studio
+              - definition [ref=e308]: Studio 9
+            - generic [ref=e309]:
+              - term [ref=e310]: Rated
+              - definition [ref=e311]: R
+      - article [ref=e312]:
+        - button "Set as active pick" [ref=e313] [cursor=pointer]
+        - generic [ref=e315]: SA
+        - generic [ref=e316]:
+          - generic [ref=e317]:
+            - heading "Sample Title 10" [level=3] [ref=e318]
+            - generic [ref=e319]: Movie
+          - paragraph [ref=e320]: 2014 - 1h 38m
+          - generic [ref=e321]:
+            - generic [ref=e322]: Critic 6.0/10
+            - generic [ref=e323]: Audience 8.3/10
+          - paragraph [ref=e324]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e325]:
+            - generic [ref=e326]: Drama
+            - generic [ref=e327]: Science Fiction
+            - generic [ref=e328]: Mystery
+          - generic [ref=e329]:
+            - generic [ref=e330]:
+              - term [ref=e331]: Release
+              - definition [ref=e332]: Feb 14, 2024
+            - generic [ref=e333]:
+              - term [ref=e334]: Studio
+              - definition [ref=e335]: Very Long Studio Name 10 Global Distribution Group
+            - generic [ref=e336]:
+              - term [ref=e337]: Rated
+              - definition [ref=e338]: PG-13
+      - article [ref=e339]:
+        - button "Set as active pick" [ref=e340] [cursor=pointer]
+        - generic [ref=e342]: SA
+        - generic [ref=e343]:
+          - generic [ref=e344]:
+            - heading "Sample Title 11" [level=3] [ref=e345]
+            - generic [ref=e346]: Movie
+          - paragraph [ref=e347]: 2015 - 1h 39m
+          - generic [ref=e348]:
+            - generic [ref=e349]: Critic 6.7/10
+            - generic [ref=e350]: Audience 9.0/10
+          - paragraph [ref=e351]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e352]:
+            - generic [ref=e353]: Drama
+            - generic [ref=e354]: Science Fiction
+            - generic [ref=e355]: Mystery
+          - generic [ref=e356]:
+            - generic [ref=e357]:
+              - term [ref=e358]: Release
+              - definition [ref=e359]: Mar 14, 2025
+            - generic [ref=e360]:
+              - term [ref=e361]: Studio
+              - definition [ref=e362]: Studio 11
+            - generic [ref=e363]:
+              - term [ref=e364]: Rated
+              - definition [ref=e365]: R
+      - article [ref=e366]:
+        - button "Set as active pick" [ref=e367] [cursor=pointer]
+        - generic [ref=e369]: TH
+        - generic [ref=e370]:
+          - generic [ref=e371]:
+            - heading "The Extremely Long Showcase Title 12 With A Subtitle That Must Wrap Cleanly" [level=3] [ref=e372]
+            - generic [ref=e373]: Show
+          - paragraph [ref=e374]: 2016 - 19 episodes
+          - generic [ref=e375]:
+            - generic [ref=e376]: Critic 7.4/10
+            - generic [ref=e377]: Audience 5.5/10
+          - paragraph [ref=e378]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e379]:
+            - generic [ref=e380]: Drama
+            - generic [ref=e381]: Science Fiction
+            - generic [ref=e382]: Mystery
+          - generic [ref=e383]:
+            - generic [ref=e384]:
+              - term [ref=e385]: Release
+              - definition [ref=e386]: Apr 14, 2020
+            - generic [ref=e387]:
+              - term [ref=e388]: Studio
+              - definition [ref=e389]: Studio 12
+            - generic [ref=e390]:
+              - term [ref=e391]: Rated
+              - definition [ref=e392]: PG-13
+      - article [ref=e393]:
+        - button "Set as active pick" [ref=e394] [cursor=pointer]
+        - generic [ref=e396]: SA
+        - generic [ref=e397]:
+          - generic [ref=e398]:
+            - heading "Sample Title 13" [level=3] [ref=e399]
+            - generic [ref=e400]: Movie
+          - paragraph [ref=e401]: 2017 - 1h 41m
+          - generic [ref=e402]:
+            - generic [ref=e403]: Critic 8.1/10
+            - generic [ref=e404]: Audience 6.2/10
+          - paragraph [ref=e405]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e406]:
+            - generic [ref=e407]: Drama
+            - generic [ref=e408]: Science Fiction
+            - generic [ref=e409]: Mystery
+          - generic [ref=e410]:
+            - generic [ref=e411]:
+              - term [ref=e412]: Release
+              - definition [ref=e413]: May 14, 2021
+            - generic [ref=e414]:
+              - term [ref=e415]: Studio
+              - definition [ref=e416]: Studio 13
+            - generic [ref=e417]:
+              - term [ref=e418]: Rated
+              - definition [ref=e419]: R
+      - article [ref=e420]:
+        - button "Set as active pick" [ref=e421] [cursor=pointer]
+        - generic [ref=e423]: SA
+        - generic [ref=e424]:
+          - generic [ref=e425]:
+            - heading "Sample Title 14" [level=3] [ref=e426]
+            - generic [ref=e427]: Movie
+          - paragraph [ref=e428]: 2018 - 1h 42m
+          - generic [ref=e429]:
+            - generic [ref=e430]: Critic 8.8/10
+            - generic [ref=e431]: Audience 6.9/10
+          - paragraph [ref=e432]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e433]:
+            - generic [ref=e434]: Drama
+            - generic [ref=e435]: Science Fiction
+            - generic [ref=e436]: Mystery
+          - generic [ref=e437]:
+            - generic [ref=e438]:
+              - term [ref=e439]: Release
+              - definition [ref=e440]: Jun 14, 2022
+            - generic [ref=e441]:
+              - term [ref=e442]: Studio
+              - definition [ref=e443]: Studio 14
+            - generic [ref=e444]:
+              - term [ref=e445]: Rated
+              - definition [ref=e446]: PG-13
+      - article [ref=e447]:
+        - button "Set as active pick" [ref=e448] [cursor=pointer]
+        - generic [ref=e450]: SA
+        - generic [ref=e451]:
+          - generic [ref=e452]:
+            - heading "Sample Title 15" [level=3] [ref=e453]
+            - generic [ref=e454]: Show
+          - paragraph [ref=e455]: 2019 - 22 episodes
+          - generic [ref=e456]:
+            - generic [ref=e457]: Critic 6.0/10
+            - generic [ref=e458]: Audience 7.6/10
+          - paragraph [ref=e459]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e460]:
+            - generic [ref=e461]: Drama
+            - generic [ref=e462]: Science Fiction
+            - generic [ref=e463]: Mystery
+          - generic [ref=e464]:
+            - generic [ref=e465]:
+              - term [ref=e466]: Release
+              - definition [ref=e467]: Jul 14, 2023
+            - generic [ref=e468]:
+              - term [ref=e469]: Studio
+              - definition [ref=e470]: Very Long Studio Name 15 Global Distribution Group
+            - generic [ref=e471]:
+              - term [ref=e472]: Rated
+              - definition [ref=e473]: R
+      - article [ref=e474]:
+        - button "Set as active pick" [ref=e475] [cursor=pointer]
+        - generic [ref=e477]: TH
+        - generic [ref=e478]:
+          - generic [ref=e479]:
+            - heading "The Extremely Long Showcase Title 16 With A Subtitle That Must Wrap Cleanly" [level=3] [ref=e480]
+            - generic [ref=e481]: Movie
+          - paragraph [ref=e482]: 2020 - 1h 44m
+          - generic [ref=e483]:
+            - generic [ref=e484]: Critic 6.7/10
+            - generic [ref=e485]: Audience 8.3/10
+          - paragraph [ref=e486]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e487]:
+            - generic [ref=e488]: Drama
+            - generic [ref=e489]: Science Fiction
+            - generic [ref=e490]: Mystery
+          - generic [ref=e491]:
+            - generic [ref=e492]:
+              - term [ref=e493]: Release
+              - definition [ref=e494]: Aug 14, 2024
+            - generic [ref=e495]:
+              - term [ref=e496]: Studio
+              - definition [ref=e497]: Studio 16
+            - generic [ref=e498]:
+              - term [ref=e499]: Rated
+              - definition [ref=e500]: PG-13
+      - article [ref=e501]:
+        - button "Set as active pick" [ref=e502] [cursor=pointer]
+        - generic [ref=e504]: SA
+        - generic [ref=e505]:
+          - generic [ref=e506]:
+            - heading "Sample Title 17" [level=3] [ref=e507]
+            - generic [ref=e508]: Movie
+          - paragraph [ref=e509]: 2021 - 1h 45m
+          - generic [ref=e510]:
+            - generic [ref=e511]: Critic 7.4/10
+            - generic [ref=e512]: Audience 9.0/10
+          - paragraph [ref=e513]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e514]:
+            - generic [ref=e515]: Drama
+            - generic [ref=e516]: Science Fiction
+            - generic [ref=e517]: Mystery
+          - generic [ref=e518]:
+            - generic [ref=e519]:
+              - term [ref=e520]: Release
+              - definition [ref=e521]: Sep 14, 2025
+            - generic [ref=e522]:
+              - term [ref=e523]: Studio
+              - definition [ref=e524]: Studio 17
+            - generic [ref=e525]:
+              - term [ref=e526]: Rated
+              - definition [ref=e527]: R
+      - article [ref=e528]:
+        - button "Set as active pick" [ref=e529] [cursor=pointer]
+        - generic [ref=e531]: SA
+        - generic [ref=e532]:
+          - generic [ref=e533]:
+            - heading "Sample Title 18" [level=3] [ref=e534]
+            - generic [ref=e535]: Show
+          - paragraph [ref=e536]: 2022 - 25 episodes
+          - generic [ref=e537]:
+            - generic [ref=e538]: Critic 8.1/10
+            - generic [ref=e539]: Audience 5.5/10
+          - paragraph [ref=e540]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e541]:
+            - generic [ref=e542]: Drama
+            - generic [ref=e543]: Science Fiction
+            - generic [ref=e544]: Mystery
+          - generic [ref=e545]:
+            - generic [ref=e546]:
+              - term [ref=e547]: Release
+              - definition [ref=e548]: Jan 14, 2020
+            - generic [ref=e549]:
+              - term [ref=e550]: Studio
+              - definition [ref=e551]: Studio 18
+            - generic [ref=e552]:
+              - term [ref=e553]: Rated
+              - definition [ref=e554]: PG-13
+      - article [ref=e555]:
+        - button "Set as active pick" [ref=e556] [cursor=pointer]
+        - generic [ref=e558]: SA
+        - generic [ref=e559]:
+          - generic [ref=e560]:
+            - heading "Sample Title 19" [level=3] [ref=e561]
+            - generic [ref=e562]: Movie
+          - paragraph [ref=e563]: 2023 - 1h 47m
+          - generic [ref=e564]:
+            - generic [ref=e565]: Critic 8.8/10
+            - generic [ref=e566]: Audience 6.2/10
+          - paragraph [ref=e567]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e568]:
+            - generic [ref=e569]: Drama
+            - generic [ref=e570]: Science Fiction
+            - generic [ref=e571]: Mystery
+          - generic [ref=e572]:
+            - generic [ref=e573]:
+              - term [ref=e574]: Release
+              - definition [ref=e575]: Feb 14, 2021
+            - generic [ref=e576]:
+              - term [ref=e577]: Studio
+              - definition [ref=e578]: Studio 19
+            - generic [ref=e579]:
+              - term [ref=e580]: Rated
+              - definition [ref=e581]: R
+      - article [ref=e582]:
+        - button "Set as active pick" [ref=e583] [cursor=pointer]
+        - generic [ref=e585]: TH
+        - generic [ref=e586]:
+          - generic [ref=e587]:
+            - heading "The Extremely Long Showcase Title 20 With A Subtitle That Must Wrap Cleanly" [level=3] [ref=e588]
+            - generic [ref=e589]: Movie
+          - paragraph [ref=e590]: 2024 - 1h 48m
+          - generic [ref=e591]:
+            - generic [ref=e592]: Critic 6.0/10
+            - generic [ref=e593]: Audience 6.9/10
+          - paragraph [ref=e594]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e595]:
+            - generic [ref=e596]: Drama
+            - generic [ref=e597]: Science Fiction
+            - generic [ref=e598]: Mystery
+          - generic [ref=e599]:
+            - generic [ref=e600]:
+              - term [ref=e601]: Release
+              - definition [ref=e602]: Mar 14, 2022
+            - generic [ref=e603]:
+              - term [ref=e604]: Studio
+              - definition [ref=e605]: Very Long Studio Name 20 Global Distribution Group
+            - generic [ref=e606]:
+              - term [ref=e607]: Rated
+              - definition [ref=e608]: PG-13
+      - article [ref=e609]:
+        - button "Set as active pick" [ref=e610] [cursor=pointer]
+        - generic [ref=e612]: SA
+        - generic [ref=e613]:
+          - generic [ref=e614]:
+            - heading "Sample Title 21" [level=3] [ref=e615]
+            - generic [ref=e616]: Show
+          - paragraph [ref=e617]: 2004 - 28 episodes
+          - generic [ref=e618]:
+            - generic [ref=e619]: Critic 6.7/10
+            - generic [ref=e620]: Audience 7.6/10
+          - paragraph [ref=e621]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e622]:
+            - generic [ref=e623]: Drama
+            - generic [ref=e624]: Science Fiction
+            - generic [ref=e625]: Mystery
+          - generic [ref=e626]:
+            - generic [ref=e627]:
+              - term [ref=e628]: Release
+              - definition [ref=e629]: Apr 14, 2023
+            - generic [ref=e630]:
+              - term [ref=e631]: Studio
+              - definition [ref=e632]: Studio 21
+            - generic [ref=e633]:
+              - term [ref=e634]: Rated
+              - definition [ref=e635]: R
+      - article [ref=e636]:
+        - button "Set as active pick" [ref=e637] [cursor=pointer]
+        - generic [ref=e639]: SA
+        - generic [ref=e640]:
+          - generic [ref=e641]:
+            - heading "Sample Title 22" [level=3] [ref=e642]
+            - generic [ref=e643]: Movie
+          - paragraph [ref=e644]: 2005 - 1h 50m
+          - generic [ref=e645]:
+            - generic [ref=e646]: Critic 7.4/10
+            - generic [ref=e647]: Audience 8.3/10
+          - paragraph [ref=e648]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e649]:
+            - generic [ref=e650]: Drama
+            - generic [ref=e651]: Science Fiction
+            - generic [ref=e652]: Mystery
+          - generic [ref=e653]:
+            - generic [ref=e654]:
+              - term [ref=e655]: Release
+              - definition [ref=e656]: May 14, 2024
+            - generic [ref=e657]:
+              - term [ref=e658]: Studio
+              - definition [ref=e659]: Studio 22
+            - generic [ref=e660]:
+              - term [ref=e661]: Rated
+              - definition [ref=e662]: PG-13
+      - article [ref=e663]:
+        - button "Set as active pick" [ref=e664] [cursor=pointer]
+        - generic [ref=e666]: SA
+        - generic [ref=e667]:
+          - generic [ref=e668]:
+            - heading "Sample Title 23" [level=3] [ref=e669]
+            - generic [ref=e670]: Movie
+          - paragraph [ref=e671]: 2006 - 1h 51m
+          - generic [ref=e672]:
+            - generic [ref=e673]: Critic 8.1/10
+            - generic [ref=e674]: Audience 9.0/10
+          - paragraph [ref=e675]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e676]:
+            - generic [ref=e677]: Drama
+            - generic [ref=e678]: Science Fiction
+            - generic [ref=e679]: Mystery
+          - generic [ref=e680]:
+            - generic [ref=e681]:
+              - term [ref=e682]: Release
+              - definition [ref=e683]: Jun 14, 2025
+            - generic [ref=e684]:
+              - term [ref=e685]: Studio
+              - definition [ref=e686]: Studio 23
+            - generic [ref=e687]:
+              - term [ref=e688]: Rated
+              - definition [ref=e689]: R
+      - article [ref=e690]:
+        - button "Set as active pick" [ref=e691] [cursor=pointer]
+        - generic [ref=e693]: TH
+        - generic [ref=e694]:
+          - generic [ref=e695]:
+            - heading "The Extremely Long Showcase Title 24 With A Subtitle That Must Wrap Cleanly" [level=3] [ref=e696]
+            - generic [ref=e697]: Show
+          - paragraph [ref=e698]: 2007 - 31 episodes
+          - generic [ref=e699]:
+            - generic [ref=e700]: Critic 8.8/10
+            - generic [ref=e701]: Audience 5.5/10
+          - paragraph [ref=e702]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e703]:
+            - generic [ref=e704]: Drama
+            - generic [ref=e705]: Science Fiction
+            - generic [ref=e706]: Mystery
+          - generic [ref=e707]:
+            - generic [ref=e708]:
+              - term [ref=e709]: Release
+              - definition [ref=e710]: Jul 14, 2020
+            - generic [ref=e711]:
+              - term [ref=e712]: Studio
+              - definition [ref=e713]: Studio 24
+            - generic [ref=e714]:
+              - term [ref=e715]: Rated
+              - definition [ref=e716]: PG-13
+      - article [ref=e717]:
+        - button "Set as active pick" [ref=e718] [cursor=pointer]
+        - generic [ref=e720]: SA
+        - generic [ref=e721]:
+          - generic [ref=e722]:
+            - heading "Sample Title 25" [level=3] [ref=e723]
+            - generic [ref=e724]: Movie
+          - paragraph [ref=e725]: 2008 - 1h 53m
+          - generic [ref=e726]:
+            - generic [ref=e727]: Critic 6.0/10
+            - generic [ref=e728]: Audience 6.2/10
+          - paragraph [ref=e729]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e730]:
+            - generic [ref=e731]: Drama
+            - generic [ref=e732]: Science Fiction
+            - generic [ref=e733]: Mystery
+          - generic [ref=e734]:
+            - generic [ref=e735]:
+              - term [ref=e736]: Release
+              - definition [ref=e737]: Aug 14, 2021
+            - generic [ref=e738]:
+              - term [ref=e739]: Studio
+              - definition [ref=e740]: Very Long Studio Name 25 Global Distribution Group
+            - generic [ref=e741]:
+              - term [ref=e742]: Rated
+              - definition [ref=e743]: R
+      - article [ref=e744]:
+        - button "Set as active pick" [ref=e745] [cursor=pointer]
+        - generic [ref=e747]: SA
+        - generic [ref=e748]:
+          - generic [ref=e749]:
+            - heading "Sample Title 26" [level=3] [ref=e750]
+            - generic [ref=e751]: Movie
+          - paragraph [ref=e752]: 2009 - 1h 54m
+          - generic [ref=e753]:
+            - generic [ref=e754]: Critic 6.7/10
+            - generic [ref=e755]: Audience 6.9/10
+          - paragraph [ref=e756]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e757]:
+            - generic [ref=e758]: Drama
+            - generic [ref=e759]: Science Fiction
+            - generic [ref=e760]: Mystery
+          - generic [ref=e761]:
+            - generic [ref=e762]:
+              - term [ref=e763]: Release
+              - definition [ref=e764]: Sep 14, 2022
+            - generic [ref=e765]:
+              - term [ref=e766]: Studio
+              - definition [ref=e767]: Studio 26
+            - generic [ref=e768]:
+              - term [ref=e769]: Rated
+              - definition [ref=e770]: PG-13
+      - article [ref=e771]:
+        - button "Set as active pick" [ref=e772] [cursor=pointer]
+        - generic [ref=e774]: SA
+        - generic [ref=e775]:
+          - generic [ref=e776]:
+            - heading "Sample Title 27" [level=3] [ref=e777]
+            - generic [ref=e778]: Show
+          - paragraph [ref=e779]: 2010 - 34 episodes
+          - generic [ref=e780]:
+            - generic [ref=e781]: Critic 7.4/10
+            - generic [ref=e782]: Audience 7.6/10
+          - paragraph [ref=e783]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e784]:
+            - generic [ref=e785]: Drama
+            - generic [ref=e786]: Science Fiction
+            - generic [ref=e787]: Mystery
+          - generic [ref=e788]:
+            - generic [ref=e789]:
+              - term [ref=e790]: Release
+              - definition [ref=e791]: Jan 14, 2023
+            - generic [ref=e792]:
+              - term [ref=e793]: Studio
+              - definition [ref=e794]: Studio 27
+            - generic [ref=e795]:
+              - term [ref=e796]: Rated
+              - definition [ref=e797]: R
+      - article [ref=e798]:
+        - button "Set as active pick" [ref=e799] [cursor=pointer]
+        - generic [ref=e801]: TH
+        - generic [ref=e802]:
+          - generic [ref=e803]:
+            - heading "The Extremely Long Showcase Title 28 With A Subtitle That Must Wrap Cleanly" [level=3] [ref=e804]
+            - generic [ref=e805]: Movie
+          - paragraph [ref=e806]: 2011 - 1h 56m
+          - generic [ref=e807]:
+            - generic [ref=e808]: Critic 8.1/10
+            - generic [ref=e809]: Audience 8.3/10
+          - paragraph [ref=e810]: Long summary text for UI validation. This content intentionally wraps across multiple lines to expose spacing and overlap issues.
+          - generic [ref=e811]:
+            - generic [ref=e812]: Drama
+            - generic [ref=e813]: Science Fiction
+            - generic [ref=e814]: Mystery
+          - generic [ref=e815]:
+            - generic [ref=e816]:
+              - term [ref=e817]: Release
+              - definition [ref=e818]: Feb 14, 2024
+            - generic [ref=e819]:
+              - term [ref=e820]: Studio
+              - definition [ref=e821]: Studio 28
+            - generic [ref=e822]:
+              - term [ref=e823]: Rated
+              - definition [ref=e824]: PG-13
