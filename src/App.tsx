@@ -150,6 +150,7 @@ function App() {
   const availableGenres = [...new Set(items.flatMap((item) => item.genres))]
     .filter(Boolean)
     .sort((left, right) => left.localeCompare(right))
+  const showInitialLoading = loading && !items.length && !error
 
   useEffect(() => {
     if (!selectedItem) {
@@ -271,8 +272,8 @@ function App() {
               <p className="eyebrow">List Source</p>
               <h2>Public share link</h2>
             </div>
-            <button className="ghost-button" type="submit">
-              Load list
+            <button className="ghost-button" type="submit" disabled={loading}>
+              {loading ? 'Loading...' : 'Load list'}
             </button>
           </div>
 
@@ -427,14 +428,41 @@ function App() {
 
         {error ? <p className="error-banner">{error}</p> : null}
 
-        {!loading && !error && !filteredItems.length ? (
+        {loading ? (
+          <div className="loading-state" aria-live="polite" aria-busy="true">
+            <div className="loading-spinner" aria-hidden="true" />
+            <div className="loading-copy">
+              <p className="loading-title">Loading Plex list</p>
+              <p>
+                Pulling pages and metadata. This can take up to a minute for large shared lists.
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {showInitialLoading ? (
+          <div className="loading-skeleton-grid" aria-hidden="true">
+            {Array.from({ length: 8 }, (_, index) => (
+              <article className="loading-skeleton-card" key={`skeleton-${index}`}>
+                <div className="loading-skeleton-button" />
+                <div className="loading-skeleton-poster" />
+                <div className="loading-skeleton-line short" />
+                <div className="loading-skeleton-line" />
+                <div className="loading-skeleton-line" />
+                <div className="loading-skeleton-line short" />
+              </article>
+            ))}
+          </div>
+        ) : null}
+
+        {!showInitialLoading && !loading && !error && !filteredItems.length ? (
           <div className="empty-state">
             <h3>No titles match the current filters.</h3>
             <p>Broaden the search, lower the rating threshold, or load a different share link.</p>
           </div>
         ) : null}
 
-        <div className="media-grid">
+        <div className={`media-grid${showInitialLoading ? ' is-hidden' : ''}`}>
           {filteredItems.map((item) => {
             const posterUrl = buildArtworkUrl(item.thumb || item.art)
 
