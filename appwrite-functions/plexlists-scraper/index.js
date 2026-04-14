@@ -2,6 +2,10 @@ import { randomUUID } from 'node:crypto'
 
 const METADATA_BASE_URL = 'https://metadata.provider.plex.tv'
 const WATCH_BASE_URL = 'https://watch.plex.tv'
+const TMDB_API_BASE_URL = 'https://api.themoviedb.org/3'
+const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p'
+const TMDB_POSTER_SIZE = 'w500'
+const TMDB_BACKDROP_SIZE = 'w1280'
 const CORS_HEADERS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, OPTIONS',
@@ -21,6 +25,8 @@ const BROWSER_SCRAPE_TIMEOUT_MS = 45_000
 const MAX_SCROLL_STEPS = 22
 const MAX_STABLE_SCROLL_STEPS = 5
 const SCROLL_WAIT_MS = 700
+const TMDB_MAX_LOOKUPS = 40
+const TMDB_LOOKUP_CONCURRENCY = 6
 
 function pushUniqueWarning(warnings, message) {
   if (!warnings.includes(message)) {
@@ -197,6 +203,9 @@ function mapPublicListItem(item) {
     audienceRating: null,
     originallyAvailableAt: Number.isFinite(year) ? `${year}-01-01` : '',
     watchlistedAt: '',
+    ratingSource: '',
+    audienceRatingSource: '',
+    imageSource: imageUrl ? 'plex' : '',
   }
 }
 
@@ -266,6 +275,9 @@ function mapDomScrapedItem(item) {
     audienceRating: null,
     originallyAvailableAt: Number.isFinite(year) ? `${year}-01-01` : '',
     watchlistedAt: '',
+    ratingSource: '',
+    audienceRatingSource: '',
+    imageSource: imageUrl ? 'plex' : '',
   }
 }
 
@@ -365,6 +377,369 @@ function readXmlDate(source, name) {
     : value
 }
 
+function buildTmdbConfig() {
+  const readAccessToken =
+    process.env.TMDB_API_READ_ACCESS_TOKEN?.trim() ||
+    process.env.TMDB_READ_ACCESS_TOKEN?.trim() ||
+    ''
+  const apiKey = process.env.TMDB_API_KEY?.trim() || ''
+
+  if (!readAccessToken && !apiKey) {
+    return null
+  }
+
+  return {
+    readAccessToken,
+    apiKey,
+  }
+}
+
+function tmdbRequestHeaders(config) {
+  const headers = {
+    accept: 'application/json',
+  }
+
+  if (config.readAccessToken) {
+    headers.authorization = `Bearer ${config.readAccessToken}`
+  }
+
+  return headers
+}
+
+function tmdbImageUrl(path, size) {
+  if (!path || typeof path !== 'string') {
+    return ''
+  }
+
+  if (/^https?:\/\//i.test(path)) {
+    return path
+  }
+
+  return `${TMDB_IMAGE_BASE_URL}/${size}${path}`
+}
+
+function tmdbNormalizeText(value) {
+  return (value ?? '').toString().trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function tmdbResultTitle(result, itemType) {
+  if (itemType === 'show') {
+    return result.name ?? result.original_name ?? ''
+  }
+
+  return result.title ?? result.original_title ?? ''
+}
+
+function tmdbResultYear(result, itemType) {
+  const rawDate = itemType === 'show' ? result.first_air_date : result.release_date
+
+  if (!rawDate || typeof rawDate !== 'string') {
+    return null
+  }
+
+  const parsedYear = Number.parseInt(rawDate.slice(0, 4), 10)
+  return Number.isFinite(parsedYear) ? parsedYear : null
+}
+
+function tmdbPickBestResult(item, results) {
+  const normalizedItemTitle = tmdbNormalizeText(item.title)
+  let bestResult = null
+  let bestScore = Number.NEGATIVE_INFINITY
+
+  for (const result of results) {
+    const candidateTitle = tmdbResultTitle(result, item.type)
+    const normalizedCandidateTitle = tmdbNormalizeText(candidateTitle)
+
+    if (!normalizedCandidateTitle) {
+      continue
+    }
+
+    let score = 0
+
+    if (normalizedCandidateTitle === normalizedItemTitle) {
+      score += 9
+    } else if (
+      normalizedCandidateTitle.includes(normalizedItemTitle) ||
+      normalizedItemTitle.includes(normalizedCandidateTitle)
+    ) {
+      score += 5
+    } else if (normalizedCandidateTitle.slice(0, 8) === normalizedItemTitle.slice(0, 8)) {
+      score += 2
+    }
+
+    const candidateYear = tmdbResultYear(result, item.type)
+
+    if (item.year && candidateYear) {
+      const yearDelta = Math.abs(item.year - candidateYear)
+
+      if (yearDelta === 0) {
+        score += 5
+      } else if (yearDelta === 1) {
+        score += 2
+      } else if (yearDelta <= 2) {
+        score += 1
+      } else {
+        score -= 2
+      }
+    }
+
+    if (typeof result.vote_count === 'number' && result.vote_count > 0) {
+      score += Math.min(Math.log10(result.vote_count + 1), 2.25)
+    }
+
+    if (score > bestScore) {
+      bestScore = score
+      bestResult = result
+    }
+  }
+
+  return {
+    result: bestResult,
+    score: bestScore,
+  }
+}
+
+async function tmdbRequestJson(path, queryEntries, config) {
+  const url = new URL(`${TMDB_API_BASE_URL}${path}`)
+  const queryParams = new URLSearchParams(queryEntries)
+
+  if (config.apiKey) {
+    queryParams.set('api_key', config.apiKey)
+  }
+
+  url.search = queryParams.toString()
+
+  const response = await fetch(url, {
+    headers: tmdbRequestHeaders(config),
+  })
+
+  if (!response.ok) {
+    const responseText = await response.text()
+    const compactText = responseText.replace(/\s+/g, ' ').trim()
+
+    throw new Error(
+      `TMDB request failed with ${response.status}${compactText ? `: ${compactText.slice(0, 180)}` : '.'}`,
+    )
+  }
+
+  return response.json()
+}
+
+async function tmdbFetchGenreMap(config, mediaType, log) {
+  try {
+    const payload = await tmdbRequestJson(`/genre/${mediaType}/list`, [['language', 'en-US']], config)
+    const genreMap = new Map()
+
+    for (const genre of payload.genres ?? []) {
+      if (!genre?.id || !genre?.name) {
+        continue
+      }
+
+      genreMap.set(genre.id, genre.name)
+    }
+
+    return genreMap
+  } catch (caughtError) {
+    log(
+      `TMDB genre lookup failed (${mediaType}): ${
+        caughtError instanceof Error ? caughtError.message : String(caughtError)
+      }`,
+    )
+
+    return new Map()
+  }
+}
+
+function tmdbMapGenres(genreIds, itemType, movieGenreMap, tvGenreMap) {
+  if (!Array.isArray(genreIds) || !genreIds.length) {
+    return []
+  }
+
+  const sourceMap = itemType === 'show' ? tvGenreMap : movieGenreMap
+  return genreIds.map((genreId) => sourceMap.get(genreId)).filter(Boolean)
+}
+
+async function mapWithConcurrency(items, concurrency, worker) {
+  if (!items.length) {
+    return []
+  }
+
+  const workers = []
+  let currentIndex = 0
+
+  for (let index = 0; index < Math.min(concurrency, items.length); index += 1) {
+    workers.push(
+      (async () => {
+        while (currentIndex < items.length) {
+          const nextIndex = currentIndex
+          currentIndex += 1
+          await worker(items[nextIndex], nextIndex)
+        }
+      })(),
+    )
+  }
+
+  await Promise.all(workers)
+}
+
+async function enrichItemsWithTmdb(items, warnings, log, options = {}) {
+  const tmdbConfig = buildTmdbConfig()
+
+  if (!tmdbConfig) {
+    pushUniqueWarning(
+      warnings,
+      'TMDB enrichment is disabled on the scraper function because no TMDB credentials are configured.',
+    )
+
+    return items
+  }
+
+  const lookupLimitRaw =
+    typeof options.maxLookups === 'number' ? options.maxLookups : Number(options.maxLookups)
+  const lookupLimit = Number.isFinite(lookupLimitRaw)
+    ? Math.max(1, Math.min(lookupLimitRaw, TMDB_MAX_LOOKUPS))
+    : TMDB_MAX_LOOKUPS
+  const onlyMissing = options.onlyMissing !== false
+  const movieGenreMap = await tmdbFetchGenreMap(tmdbConfig, 'movie', log)
+  const tvGenreMap = await tmdbFetchGenreMap(tmdbConfig, 'tv', log)
+  const eligibleItems = items.filter(
+    (item) =>
+      !!item.title &&
+      (item.type === 'movie' || item.type === 'show') &&
+      (!onlyMissing ||
+        !item.thumb ||
+        !item.art ||
+        item.rating == null ||
+        item.audienceRating == null ||
+        !item.summary),
+  )
+  const targetItems = eligibleItems.slice(0, lookupLimit)
+
+  if (!targetItems.length) {
+    return items
+  }
+
+  if (eligibleItems.length > lookupLimit) {
+    pushUniqueWarning(
+      warnings,
+      `TMDB enrichment was capped to ${lookupLimit} items to keep response times stable.`,
+    )
+  }
+
+  const tmdbResultCache = new Map()
+  const enrichedItemsById = new Map()
+  let appliedTmdbRating = false
+  let appliedTmdbImage = false
+
+  await mapWithConcurrency(targetItems, TMDB_LOOKUP_CONCURRENCY, async (item) => {
+    const cacheKey = `${item.type}:${tmdbNormalizeText(item.title)}:${item.year ?? ''}`
+
+    if (tmdbResultCache.has(cacheKey)) {
+      enrichedItemsById.set(item.id, tmdbResultCache.get(cacheKey))
+      return
+    }
+
+    const endpoint = item.type === 'show' ? '/search/tv' : '/search/movie'
+    const queryEntries = [
+      ['query', item.title],
+      ['language', 'en-US'],
+      ['include_adult', 'false'],
+      ['page', '1'],
+    ]
+
+    if (item.year) {
+      queryEntries.push([item.type === 'show' ? 'first_air_date_year' : 'year', String(item.year)])
+    }
+
+    try {
+      const payload = await tmdbRequestJson(endpoint, queryEntries, tmdbConfig)
+      const results = Array.isArray(payload.results) ? payload.results : []
+
+      if (!results.length) {
+        tmdbResultCache.set(cacheKey, item)
+        enrichedItemsById.set(item.id, item)
+        return
+      }
+
+      const bestMatch = tmdbPickBestResult(item, results)
+
+      if (!bestMatch.result || bestMatch.score < 4) {
+        tmdbResultCache.set(cacheKey, item)
+        enrichedItemsById.set(item.id, item)
+        return
+      }
+
+      const tmdbRating =
+        typeof bestMatch.result.vote_average === 'number'
+          ? Number(bestMatch.result.vote_average.toFixed(1))
+          : null
+      const tmdbPoster = tmdbImageUrl(bestMatch.result.poster_path, TMDB_POSTER_SIZE)
+      const tmdbBackdrop = tmdbImageUrl(bestMatch.result.backdrop_path, TMDB_BACKDROP_SIZE)
+      const tmdbGenres = tmdbMapGenres(
+        bestMatch.result.genre_ids,
+        item.type,
+        movieGenreMap,
+        tvGenreMap,
+      )
+      const tmdbYear = tmdbResultYear(bestMatch.result, item.type)
+
+      const nextItem = {
+        ...item,
+        year: item.year ?? tmdbYear ?? null,
+        summary: item.summary || bestMatch.result.overview || '',
+        thumb: tmdbPoster || item.thumb,
+        art: tmdbBackdrop || tmdbPoster || item.art,
+        genres: item.genres?.length ? item.genres : tmdbGenres,
+        rating: item.rating ?? tmdbRating,
+        audienceRating: item.audienceRating ?? tmdbRating,
+        ratingSource: item.rating != null ? item.ratingSource ?? 'plex' : tmdbRating != null ? 'tmdb' : '',
+        audienceRatingSource:
+          item.audienceRating != null
+            ? item.audienceRatingSource ?? 'plex'
+            : tmdbRating != null
+              ? 'tmdb'
+              : '',
+        imageSource: tmdbPoster || tmdbBackdrop ? 'tmdb' : item.imageSource ?? '',
+      }
+
+      if (tmdbRating != null && (item.rating == null || item.audienceRating == null)) {
+        appliedTmdbRating = true
+      }
+
+      if ((tmdbPoster || tmdbBackdrop) && (!item.thumb || !item.art || item.imageSource !== 'plex')) {
+        appliedTmdbImage = true
+      }
+
+      tmdbResultCache.set(cacheKey, nextItem)
+      enrichedItemsById.set(item.id, nextItem)
+    } catch (caughtError) {
+      log(
+        `TMDB enrichment failed for ${item.title}: ${
+          caughtError instanceof Error ? caughtError.message : String(caughtError)
+        }`,
+      )
+      tmdbResultCache.set(cacheKey, item)
+      enrichedItemsById.set(item.id, item)
+    }
+  })
+
+  if (appliedTmdbRating) {
+    pushUniqueWarning(
+      warnings,
+      'Some ratings were filled from TMDB where Plex did not provide a rating.',
+    )
+  }
+
+  if (appliedTmdbImage) {
+    pushUniqueWarning(
+      warnings,
+      'Some posters or backdrops were filled from TMDB when available.',
+    )
+  }
+
+  return items.map((item) => enrichedItemsById.get(item.id) ?? item)
+}
+
 function parseMetadataXml(xml) {
   const match = xml.match(/<(Video|Directory|Metadata)\b([^>]*)>([\s\S]*?)<\/\1>/)
 
@@ -398,10 +773,14 @@ function parseMetadataXml(xml) {
     audienceRating: readXmlNumber(attributes, 'audienceRating'),
     originallyAvailableAt: readXmlDate(attributes, 'originallyAvailableAt'),
     watchlistedAt: readXmlDate(attributes, 'watchlistedAt'),
+    ratingSource: readXmlNumber(attributes, 'rating') != null ? 'plex' : '',
+    audienceRatingSource: readXmlNumber(attributes, 'audienceRating') != null ? 'plex' : '',
+    imageSource:
+      readXmlAttribute(attributes, 'thumb') || readXmlAttribute(attributes, 'art') ? 'plex' : '',
   }
 }
 
-async function enrichItems(items, warnings, log) {
+async function enrichItems(items, warnings, log, options = {}) {
   const enrichedItems = []
 
   for (const item of items) {
@@ -448,7 +827,13 @@ async function enrichItems(items, warnings, log) {
     }
   }
 
-  return enrichedItems
+  const tmdbMode = options.tmdbMode === 'none' ? 'none' : 'auto'
+
+  if (tmdbMode === 'none') {
+    return enrichedItems
+  }
+
+  return enrichItemsWithTmdb(enrichedItems, warnings, log, options.tmdbOptions ?? {})
 }
 
 async function scrapeListWithFetch(shareUrl) {
@@ -579,42 +964,152 @@ async function scrapeListWithBrowser(shareUrl, log) {
   }
 }
 
-function readShareUrlFromBody(body) {
+function readBodyObject(body) {
   if (!body) {
-    return ''
+    return null
   }
 
   if (typeof body === 'string') {
     const trimmedBody = body.trim()
 
     if (!trimmedBody) {
-      return ''
+      return null
     }
 
     try {
-      return readShareUrlFromBody(JSON.parse(trimmedBody))
+      const parsed = JSON.parse(trimmedBody)
+      return parsed && typeof parsed === 'object' ? parsed : null
     } catch {
-      return trimmedBody
+      return null
     }
   }
 
-  if (typeof body !== 'object') {
+  return typeof body === 'object' ? body : null
+}
+
+function readShareUrlFromBody(body) {
+  const bodyObject = readBodyObject(body)
+
+  if (!bodyObject) {
     return ''
   }
 
-  if (typeof body.url === 'string') {
-    return body.url
+  if (typeof bodyObject.url === 'string') {
+    return bodyObject.url
   }
 
-  if (typeof body.shareUrl === 'string') {
-    return body.shareUrl
+  if (typeof bodyObject.shareUrl === 'string') {
+    return bodyObject.shareUrl
   }
 
-  if (typeof body.sharedListUrl === 'string') {
-    return body.sharedListUrl
+  if (typeof bodyObject.sharedListUrl === 'string') {
+    return bodyObject.sharedListUrl
   }
 
   return ''
+}
+
+function readQueryStringParam(value) {
+  if (Array.isArray(value)) {
+    return readQueryStringParam(value[0])
+  }
+
+  return typeof value === 'string' ? value : ''
+}
+
+function readTmdbModeValue(value) {
+  if (typeof value !== 'string') {
+    return ''
+  }
+
+  const normalizedValue = value.trim().toLowerCase()
+
+  if (normalizedValue === 'none' || normalizedValue === 'auto') {
+    return normalizedValue
+  }
+
+  return ''
+}
+
+function readTmdbModeFromBody(body) {
+  const bodyObject = readBodyObject(body)
+
+  if (!bodyObject) {
+    return ''
+  }
+
+  return readTmdbModeValue(bodyObject.tmdbMode)
+}
+
+function normalizeTmdbEnrichmentItem(rawItem) {
+  if (!rawItem || typeof rawItem !== 'object') {
+    return null
+  }
+
+  const type = rawItem.type === 'show' ? 'show' : rawItem.type === 'movie' ? 'movie' : ''
+  const id = typeof rawItem.id === 'string' ? rawItem.id.trim() : ''
+  const title = typeof rawItem.title === 'string' ? rawItem.title.trim() : ''
+
+  if (!type || !id || !title) {
+    return null
+  }
+
+  const yearValue =
+    typeof rawItem.year === 'number' ? rawItem.year : Number.parseInt(String(rawItem.year ?? ''), 10)
+  const year = Number.isFinite(yearValue) ? yearValue : null
+
+  return {
+    id,
+    ratingKey: typeof rawItem.ratingKey === 'string' ? rawItem.ratingKey : id,
+    guid: typeof rawItem.guid === 'string' ? rawItem.guid : '',
+    path: typeof rawItem.path === 'string' ? rawItem.path : '',
+    canonicalUrl: typeof rawItem.canonicalUrl === 'string' ? rawItem.canonicalUrl : '',
+    type,
+    title,
+    titleSort: typeof rawItem.titleSort === 'string' ? rawItem.titleSort : title,
+    year,
+    summary: typeof rawItem.summary === 'string' ? rawItem.summary : '',
+    tagline: typeof rawItem.tagline === 'string' ? rawItem.tagline : '',
+    studio: typeof rawItem.studio === 'string' ? rawItem.studio : '',
+    contentRating: typeof rawItem.contentRating === 'string' ? rawItem.contentRating : '',
+    durationMinutes:
+      typeof rawItem.durationMinutes === 'number' && Number.isFinite(rawItem.durationMinutes)
+        ? rawItem.durationMinutes
+        : null,
+    childCount:
+      typeof rawItem.childCount === 'number' && Number.isFinite(rawItem.childCount)
+        ? rawItem.childCount
+        : null,
+    thumb: typeof rawItem.thumb === 'string' ? rawItem.thumb : '',
+    art: typeof rawItem.art === 'string' ? rawItem.art : '',
+    genres: Array.isArray(rawItem.genres)
+      ? rawItem.genres.filter((genre) => typeof genre === 'string' && genre.trim()).map((genre) => genre.trim())
+      : [],
+    rating: typeof rawItem.rating === 'number' && Number.isFinite(rawItem.rating) ? rawItem.rating : null,
+    audienceRating:
+      typeof rawItem.audienceRating === 'number' && Number.isFinite(rawItem.audienceRating)
+        ? rawItem.audienceRating
+        : null,
+    originallyAvailableAt:
+      typeof rawItem.originallyAvailableAt === 'string' ? rawItem.originallyAvailableAt : '',
+    watchlistedAt: typeof rawItem.watchlistedAt === 'string' ? rawItem.watchlistedAt : '',
+    ratingSource: rawItem.ratingSource === 'tmdb' || rawItem.ratingSource === 'plex' ? rawItem.ratingSource : '',
+    audienceRatingSource:
+      rawItem.audienceRatingSource === 'tmdb' || rawItem.audienceRatingSource === 'plex'
+        ? rawItem.audienceRatingSource
+        : '',
+    imageSource: rawItem.imageSource === 'tmdb' || rawItem.imageSource === 'plex' ? rawItem.imageSource : '',
+  }
+}
+
+function readTmdbEnrichmentItemsFromBody(body) {
+  const bodyObject = readBodyObject(body)
+
+  if (!bodyObject || !Array.isArray(bodyObject.items)) {
+    return []
+  }
+
+  return bodyObject.items.map(normalizeTmdbEnrichmentItem).filter(Boolean)
 }
 
 const legacyHandler = async ({ req, res, log, error }) => {
@@ -1097,6 +1592,71 @@ export default async ({ req, res, log, error }) => {
     )
   }
 
+  const bodyObject = readBodyObject(req.body)
+  const requestPath = typeof req.path === 'string' ? req.path : '/'
+  const isTmdbEnrichmentRoute = requestPath === '/tmdb-enrich' || requestPath === 'tmdb-enrich'
+
+  if (isTmdbEnrichmentRoute) {
+    if (req.method !== 'POST') {
+      return res.json(
+        {
+          ok: false,
+          error: 'TMDB enrichment only supports POST requests.',
+        },
+        405,
+        CORS_HEADERS,
+      )
+    }
+
+    const incomingItems = readTmdbEnrichmentItemsFromBody(bodyObject)
+
+    if (!incomingItems.length) {
+      return res.json(
+        {
+          ok: false,
+          error: 'Provide a non-empty items array with id, type, and title for TMDB enrichment.',
+        },
+        400,
+        CORS_HEADERS,
+      )
+    }
+
+    try {
+      const warnings = []
+      const enrichedItems = await enrichItemsWithTmdb(incomingItems, warnings, log, {
+        maxLookups: incomingItems.length,
+        onlyMissing: false,
+      })
+
+      return res.json(
+        {
+          ok: true,
+          total: enrichedItems.length,
+          items: enrichedItems,
+          warnings,
+        },
+        200,
+        CORS_HEADERS,
+      )
+    } catch (caughtError) {
+      const message =
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'TMDB batch enrichment failed for an unknown reason.'
+
+      error(message)
+
+      return res.json(
+        {
+          ok: false,
+          error: message,
+        },
+        500,
+        CORS_HEADERS,
+      )
+    }
+  }
+
   const rawShareUrl = req.query.url ?? req.query.shareUrl ?? readShareUrlFromBody(req.body)
 
   if (!rawShareUrl) {
@@ -1113,6 +1673,10 @@ export default async ({ req, res, log, error }) => {
 
   try {
     const shareUrl = normalizeShareUrl(rawShareUrl)
+    const tmdbMode =
+      readTmdbModeValue(readQueryStringParam(req.query.tmdbMode)) ||
+      readTmdbModeFromBody(req.body) ||
+      'auto'
     const warnings = []
     const scraped = await v2ScrapeListWithFetch(shareUrl, warnings, log)
 
@@ -1123,12 +1687,15 @@ export default async ({ req, res, log, error }) => {
       )
     }
 
-    const enrichedItems = await enrichItems(scraped.items, warnings, log)
+    const enrichedItems = await enrichItems(scraped.items, warnings, log, {
+      tmdbMode,
+    })
 
     return res.json(
       {
         ok: true,
         shareUrl: shareUrl.toString(),
+        tmdbMode,
         scrapeMode: scraped.mode,
         total: enrichedItems.length,
         nextUrl: scraped.nextUrl,

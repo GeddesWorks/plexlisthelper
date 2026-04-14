@@ -1,22 +1,27 @@
-import { startTransition, useEffect, useState } from 'react'
+import { startTransition, useEffect, useRef, useState } from 'react'
 import './App.css'
+import tmdbLogo from './assets/tmdb-logo.svg'
 import {
   buildArtworkUrl,
-  fetchSharedList,
+  fetchSharedListFast,
+  fetchTmdbEnrichment,
   filterItems,
   isReleased,
   pickRandomItem,
   sortItems,
-  type SharedListResult,
   type PlexWatchlistItem,
   type SortOption,
   type WatchlistFilters,
 } from './lib/plex'
 import {
+  deleteSavedListLink,
   defaultSettings,
   loadSettings,
+  loadSavedListLinks,
   saveSettings,
+  upsertSavedListLink,
   type PlexSettings,
+  type SavedListLink,
 } from './lib/storage'
 
 const DEFAULT_FILTERS: WatchlistFilters = {
@@ -36,6 +41,9 @@ const SORT_OPTIONS: Array<{ value: SortOption; label: string }> = [
   { value: 'rating:desc', label: 'Highest critic rating' },
   { value: 'rating:asc', label: 'Lowest critic rating' },
 ]
+
+const INITIAL_PRIORITY_COUNT = 24
+const ENRICHMENT_BATCH_SIZE = 20
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   month: 'short',
@@ -79,8 +87,69 @@ function ratingLabel(value: number | null) {
   return value ? `${value.toFixed(1)}/10` : 'No score'
 }
 
-async function requestWatchlist(settings: PlexSettings): Promise<SharedListResult> {
-  return fetchSharedList(settings)
+function ratingSourceLabel(
+  source: PlexWatchlistItem['ratingSource'] | PlexWatchlistItem['audienceRatingSource'] | undefined,
+  fallback: string,
+) {
+  return source === 'tmdb' ? 'TMDB' : fallback
+}
+
+function dedupeWarnings(nextWarnings: string[]) {
+  return [...new Set(nextWarnings)]
+}
+
+function mergeItemsById(
+  currentItems: PlexWatchlistItem[],
+  incomingItems: PlexWatchlistItem[],
+) {
+  const incomingMap = new Map(incomingItems.map((item) => [item.id, item]))
+  return currentItems.map((item) => incomingMap.get(item.id) ?? item)
+}
+
+function buildPriorityOrder(
+  items: PlexWatchlistItem[],
+  filters: WatchlistFilters,
+  sort: SortOption,
+) {
+  const visibleIds = new Set(sortItems(filterItems(items, filters), sort).map((item) => item.id))
+  const visibleItems = items
+    .filter((item) => visibleIds.has(item.id))
+    .slice(0, INITIAL_PRIORITY_COUNT)
+  const visibleItemIds = new Set(visibleItems.map((item) => item.id))
+  const backgroundItems = items.filter((item) => !visibleItemIds.has(item.id))
+
+  return [...visibleItems, ...backgroundItems]
+}
+
+function chunkItems(items: PlexWatchlistItem[], chunkSize: number) {
+  const chunks: PlexWatchlistItem[][] = []
+
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize))
+  }
+
+  return chunks
+}
+
+function deriveListName(shareUrl: string) {
+  try {
+    const parsedUrl = /^https?:\/\//i.test(shareUrl)
+      ? new URL(shareUrl)
+      : new URL(`https://${shareUrl}`)
+    const segments = parsedUrl.pathname.split('/').filter(Boolean)
+    const slug = segments.at(-1) ?? ''
+
+    if (!slug) {
+      return 'Saved Plex list'
+    }
+
+    return slug
+      .replaceAll('-', ' ')
+      .trim()
+      .replace(/\b\w/g, (char) => char.toUpperCase())
+  } catch {
+    return 'Saved Plex list'
+  }
 }
 
 function App() {
@@ -94,34 +163,70 @@ function App() {
   const [error, setError] = useState('')
   const [warnings, setWarnings] = useState<string[]>([])
   const [lastUpdated, setLastUpdated] = useState('')
+  const [savedListLinks, setSavedListLinks] = useState<SavedListLink[]>([])
+  const [tmdbProgress, setTmdbProgress] = useState({
+    active: false,
+    processed: 0,
+    total: 0,
+  })
+  const filtersRef = useRef(filters)
+  const sortRef = useRef(sort)
 
   useEffect(() => {
     const storedSettings = loadSettings()
     setSettings(storedSettings)
     setDraftSettings(storedSettings)
+    setSavedListLinks(loadSavedListLinks())
   }, [])
 
   useEffect(() => {
+    filtersRef.current = filters
+  }, [filters])
+
+  useEffect(() => {
+    sortRef.current = sort
+  }, [sort])
+
+  useEffect(() => {
+    let isCancelled = false
+
     if (!settings.sharedListUrl) {
       setItems([])
       setSelectedItem(null)
       setWarnings([])
       setLastUpdated('')
+      setTmdbProgress({
+        active: false,
+        processed: 0,
+        total: 0,
+      })
       setError('Paste a public Plex share link to load a list.')
-      return
+      return () => {
+        isCancelled = true
+      }
     }
 
     const loadWatchlist = async () => {
       setLoading(true)
       setError('')
+      setTmdbProgress({
+        active: false,
+        processed: 0,
+        total: 0,
+      })
 
       try {
-        const nextResult = await requestWatchlist(settings)
+        const nextResult = await fetchSharedListFast(settings, 'none')
+
+        if (isCancelled) {
+          return
+        }
+
         const nextItems = nextResult.items
 
         startTransition(() => {
           setItems(nextItems)
-          setWarnings(nextResult.warnings)
+          setWarnings(dedupeWarnings(nextResult.warnings))
           setSelectedItem((currentSelection) => {
             if (!currentSelection) {
               return null
@@ -131,19 +236,112 @@ function App() {
           })
           setLastUpdated(new Date().toISOString())
         })
+
+        const normalizedShareUrl = settings.sharedListUrl.trim()
+
+        if (normalizedShareUrl) {
+          upsertSavedListLink({
+            url: normalizedShareUrl,
+            name: deriveListName(normalizedShareUrl),
+            lastLoadedAt: new Date().toISOString(),
+          })
+          setSavedListLinks(loadSavedListLinks())
+        }
+
+        if (!isCancelled) {
+          setLoading(false)
+        }
+
+        const prioritizedItems = buildPriorityOrder(nextItems, filtersRef.current, sortRef.current)
+        const batches = chunkItems(prioritizedItems, ENRICHMENT_BATCH_SIZE)
+
+        if (!batches.length) {
+          return
+        }
+
+        setTmdbProgress({
+          active: true,
+          processed: 0,
+          total: prioritizedItems.length,
+        })
+
+        let processedCount = 0
+
+        for (const batch of batches) {
+          if (isCancelled) {
+            return
+          }
+
+          try {
+            const enrichmentResult = await fetchTmdbEnrichment(batch)
+
+            if (isCancelled) {
+              return
+            }
+
+            processedCount = Math.min(prioritizedItems.length, processedCount + batch.length)
+
+            startTransition(() => {
+              setItems((currentItems) => mergeItemsById(currentItems, enrichmentResult.items))
+              setSelectedItem((currentSelection) => {
+                if (!currentSelection) {
+                  return null
+                }
+
+                return (
+                  enrichmentResult.items.find((item) => item.id === currentSelection.id) ??
+                  currentSelection
+                )
+              })
+
+              if (enrichmentResult.warnings.length) {
+                setWarnings((currentWarnings) =>
+                  dedupeWarnings([...currentWarnings, ...enrichmentResult.warnings]),
+                )
+              }
+            })
+          } catch {
+            processedCount = Math.min(prioritizedItems.length, processedCount + batch.length)
+            setWarnings((currentWarnings) =>
+              dedupeWarnings([
+                ...currentWarnings,
+                'TMDB enrichment was partially skipped because one background request failed.',
+              ]),
+            )
+          } finally {
+            if (!isCancelled) {
+              setTmdbProgress({
+                active: processedCount < prioritizedItems.length,
+                processed: processedCount,
+                total: prioritizedItems.length,
+              })
+            }
+          }
+        }
       } catch (caughtError) {
         setWarnings([])
+        setTmdbProgress({
+          active: false,
+          processed: 0,
+          total: 0,
+        })
         setError(
           caughtError instanceof Error
             ? caughtError.message
             : 'The shared Plex list request failed for an unknown reason.',
         )
       } finally {
-        setLoading(false)
+        if (!isCancelled) {
+          setLoading(false)
+        }
       }
     }
 
     void loadWatchlist()
+
+    return () => {
+      isCancelled = true
+    }
   }, [settings])
 
   const filteredItems = sortItems(filterItems(items, filters), sort)
@@ -151,6 +349,9 @@ function App() {
     .filter(Boolean)
     .sort((left, right) => left.localeCompare(right))
   const showInitialLoading = loading && !items.length && !error
+  const showEnrichmentLoading = tmdbProgress.active && !showInitialLoading && !error
+  const enrichmentPercent =
+    tmdbProgress.total > 0 ? Math.round((tmdbProgress.processed / tmdbProgress.total) * 100) : 0
 
   useEffect(() => {
     if (!selectedItem) {
@@ -187,6 +388,21 @@ function App() {
       setLastUpdated('')
       setError('Paste a public Plex share link to load a list.')
     }
+  }
+
+  const handleLoadSavedList = (url: string) => {
+    const nextSettings = {
+      sharedListUrl: url.trim(),
+    }
+
+    setDraftSettings(nextSettings)
+    saveSettings(nextSettings)
+    setSettings(nextSettings)
+  }
+
+  const handleRemoveSavedList = (url: string) => {
+    deleteSavedListLink(url)
+    setSavedListLinks(loadSavedListLinks())
   }
 
   const handleRandomPick = () => {
@@ -291,6 +507,41 @@ function App() {
             The share link is saved in your browser only. List data is fetched through the Appwrite
             scraper function. If you move this app to a new domain, add that origin as a Web
             platform in Appwrite.
+          </p>
+
+          {savedListLinks.length ? (
+            <section className="saved-lists" aria-label="Saved list links">
+              <p className="saved-lists-title">Recent links</p>
+              <div className="saved-lists-grid">
+                {savedListLinks.map((entry) => (
+                  <div className="saved-list-row" key={entry.url}>
+                    <button
+                      className="saved-list-load"
+                      type="button"
+                      onClick={() => handleLoadSavedList(entry.url)}
+                    >
+                      <span>{entry.name}</span>
+                      <small>{formatDate(entry.lastLoadedAt)}</small>
+                    </button>
+                    <button
+                      className="saved-list-remove"
+                      type="button"
+                      onClick={() => handleRemoveSavedList(entry.url)}
+                      aria-label={`Remove ${entry.name}`}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          <p className="tmdb-attribution">
+            <img src={tmdbLogo} alt="TMDB logo" />
+            <span>
+              This product uses the TMDB API but is not endorsed or certified by TMDB.
+            </span>
           </p>
         </form>
 
@@ -414,7 +665,12 @@ function App() {
           </div>
           <div className="status-cluster">
             {lastUpdated ? <span>Updated {formatDate(lastUpdated)}</span> : null}
-            {loading ? <span>Loading...</span> : null}
+            {loading ? <span>Loading list...</span> : null}
+            {showEnrichmentLoading ? (
+              <span>
+                Enhancing metadata {tmdbProgress.processed}/{tmdbProgress.total}
+              </span>
+            ) : null}
           </div>
         </div>
 
@@ -436,6 +692,22 @@ function App() {
               <p>
                 Pulling pages and metadata. This can take up to a minute for large shared lists.
               </p>
+            </div>
+          </div>
+        ) : null}
+
+        {showEnrichmentLoading ? (
+          <div className="loading-state loading-state-secondary" aria-live="polite" aria-busy="true">
+            <div className="loading-spinner loading-spinner-secondary" aria-hidden="true" />
+            <div className="loading-copy">
+              <p className="loading-title">Enhancing posters and ratings</p>
+              <p>
+                Processing {tmdbProgress.processed} of {tmdbProgress.total} titles in the
+                background.
+              </p>
+            </div>
+            <div className="loading-meter" aria-hidden="true">
+              <div style={{ width: `${enrichmentPercent}%` }} />
             </div>
           </div>
         ) : null}
@@ -501,8 +773,13 @@ function App() {
                   </p>
 
                   <div className="score-row">
-                    <span>Critic {ratingLabel(item.rating)}</span>
-                    <span>Audience {ratingLabel(item.audienceRating)}</span>
+                    <span>
+                      {ratingSourceLabel(item.ratingSource, 'Critic')} {ratingLabel(item.rating)}
+                    </span>
+                    <span>
+                      {ratingSourceLabel(item.audienceRatingSource, 'Audience')}{' '}
+                      {ratingLabel(item.audienceRating)}
+                    </span>
                   </div>
 
                   <p className="summary">

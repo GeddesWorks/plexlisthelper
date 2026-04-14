@@ -60,6 +60,17 @@ You will need:
 
 The current function is tokenless for the share-link request itself, then uses server-side pagination attempts to pull additional pages from Plex's list fragment endpoints. Metadata enrichment is still anonymous and can fail for some titles.
 
+## TMDB enrichment (optional but recommended)
+
+To improve missing posters/ratings/summaries, set TMDB credentials as Appwrite Function environment variables on `plexlists_scraper`:
+
+- `TMDB_API_READ_ACCESS_TOKEN` (recommended; v4 bearer token)
+- `TMDB_API_KEY` (optional fallback)
+
+After changing function variables, redeploy the function so runtime env vars take effect.
+
+When TMDB is used, the UI includes the required attribution notice and logo.
+
 ## GitHub Pages
 
 A GitHub Actions workflow is included to publish the static frontend to GitHub Pages with `BASE_PATH=/plexlists/`.

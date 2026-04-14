@@ -31,6 +31,9 @@ export type PlexWatchlistItem = {
   genres: string[]
   rating: number | null
   audienceRating: number | null
+  ratingSource?: 'plex' | 'tmdb' | ''
+  audienceRatingSource?: 'plex' | 'tmdb' | ''
+  imageSource?: 'plex' | 'tmdb' | ''
   originallyAvailableAt: string
   watchlistedAt: string
 }
@@ -47,6 +50,8 @@ export type SharedListResult = {
   items: PlexWatchlistItem[]
   warnings: string[]
 }
+
+export type TmdbMode = 'auto' | 'none'
 
 const METADATA_BASE_URL = 'https://metadata.provider.plex.tv'
 const DEFAULT_APPWRITE_ENDPOINT = 'https://sfo.cloud.appwrite.io/v1'
@@ -99,13 +104,19 @@ function buildSharedListUrl(settings: PlexSettings) {
   return nextUrl
 }
 
-async function requestScraperExecution(shareUrl: string) {
+type ScraperExecutionRequest = {
+  body: Record<string, unknown>
+  xpath?: string
+}
+
+async function requestScraperExecution({ body, xpath }: ScraperExecutionRequest) {
   try {
     return (await appwriteFunctions.createExecution({
       functionId: APPWRITE_FUNCTION_ID,
       async: false,
-      body: JSON.stringify({ url: shareUrl }),
+      body: JSON.stringify(body),
       method: ExecutionMethod.POST,
+      xpath,
       headers: {
         'content-type': 'application/json',
       },
@@ -192,7 +203,44 @@ function parseScraperExecution(execution: AppwriteExecution): SharedListResult {
 
 export async function fetchSharedList(settings: PlexSettings): Promise<SharedListResult> {
   const shareUrl = buildSharedListUrl(settings)
-  const execution = await requestScraperExecution(shareUrl.toString())
+  const execution = await requestScraperExecution({
+    body: {
+      url: shareUrl.toString(),
+      tmdbMode: 'auto',
+    },
+  })
+  return parseScraperExecution(execution)
+}
+
+export async function fetchSharedListFast(
+  settings: PlexSettings,
+  tmdbMode: TmdbMode = 'none',
+): Promise<SharedListResult> {
+  const shareUrl = buildSharedListUrl(settings)
+  const execution = await requestScraperExecution({
+    body: {
+      url: shareUrl.toString(),
+      tmdbMode,
+    },
+  })
+  return parseScraperExecution(execution)
+}
+
+export async function fetchTmdbEnrichment(items: PlexWatchlistItem[]): Promise<SharedListResult> {
+  if (!items.length) {
+    return {
+      items: [],
+      warnings: [],
+    }
+  }
+
+  const execution = await requestScraperExecution({
+    xpath: '/tmdb-enrich',
+    body: {
+      items,
+    },
+  })
+
   return parseScraperExecution(execution)
 }
 
