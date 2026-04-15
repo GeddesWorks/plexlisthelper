@@ -14,12 +14,16 @@ import {
   type WatchlistFilters,
 } from './lib/plex'
 import {
+  deleteCachedList,
   deleteSavedListLink,
   defaultSettings,
+  loadCachedList,
   loadSettings,
   loadSavedListLinks,
   saveSettings,
+  upsertCachedList,
   upsertSavedListLink,
+  type CachedListData,
   type PlexSettings,
   type SavedListLink,
 } from './lib/storage'
@@ -44,6 +48,7 @@ const SORT_OPTIONS: Array<{ value: SortOption; label: string }> = [
 
 const INITIAL_PRIORITY_COUNT = 24
 const ENRICHMENT_BATCH_SIZE = 20
+const CACHE_FRESH_WINDOW_MS = 1000 * 60 * 60 * 8
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   month: 'short',
@@ -152,6 +157,16 @@ function deriveListName(shareUrl: string) {
   }
 }
 
+function isCacheFresh(cachedAt: string) {
+  const cachedTimestamp = new Date(cachedAt).getTime()
+
+  if (Number.isNaN(cachedTimestamp)) {
+    return false
+  }
+
+  return Date.now() - cachedTimestamp <= CACHE_FRESH_WINDOW_MS
+}
+
 function App() {
   const [settings, setSettings] = useState<PlexSettings>(defaultSettings)
   const [draftSettings, setDraftSettings] = useState<PlexSettings>(defaultSettings)
@@ -163,6 +178,7 @@ function App() {
   const [error, setError] = useState('')
   const [warnings, setWarnings] = useState<string[]>([])
   const [lastUpdated, setLastUpdated] = useState('')
+  const [showingCachedData, setShowingCachedData] = useState(false)
   const [savedListLinks, setSavedListLinks] = useState<SavedListLink[]>([])
   const [tmdbProgress, setTmdbProgress] = useState({
     active: false,
@@ -171,6 +187,7 @@ function App() {
   })
   const filtersRef = useRef(filters)
   const sortRef = useRef(sort)
+  const forceRefreshRef = useRef(false)
 
   useEffect(() => {
     const storedSettings = loadSettings()
@@ -195,6 +212,7 @@ function App() {
       setSelectedItem(null)
       setWarnings([])
       setLastUpdated('')
+      setShowingCachedData(false)
       setTmdbProgress({
         active: false,
         processed: 0,
@@ -207,13 +225,47 @@ function App() {
     }
 
     const loadWatchlist = async () => {
-      setLoading(true)
+      const normalizedShareUrl = settings.sharedListUrl.trim()
+      const forceRefresh = forceRefreshRef.current
+      forceRefreshRef.current = false
+      const cachedList = loadCachedList(normalizedShareUrl)
+      const shouldSkipRemoteRefresh =
+        !!cachedList && !forceRefresh && isCacheFresh(cachedList.cachedAt)
+
+      setLoading(!cachedList || forceRefresh)
       setError('')
+      setShowingCachedData(!!cachedList)
       setTmdbProgress({
         active: false,
         processed: 0,
         total: 0,
       })
+
+      if (cachedList) {
+        startTransition(() => {
+          setItems(cachedList.items)
+          setWarnings(dedupeWarnings(cachedList.warnings))
+          setSelectedItem((currentSelection) => {
+            if (!currentSelection) {
+              return null
+            }
+
+            return cachedList.items.find((item) => item.id === currentSelection.id) ?? null
+          })
+          setLastUpdated(cachedList.cachedAt)
+        })
+      }
+
+      if (shouldSkipRemoteRefresh) {
+        setWarnings(
+          dedupeWarnings([
+            ...(cachedList?.warnings ?? []),
+            'Using cached list data from this browser. Press "Load list" to refresh from Plex now.',
+          ]),
+        )
+        setLoading(false)
+        return
+      }
 
       try {
         const nextResult = await fetchSharedListFast(settings, 'none')
@@ -223,10 +275,12 @@ function App() {
         }
 
         const nextItems = nextResult.items
+        const freshWarnings = dedupeWarnings(nextResult.warnings)
+        const freshLoadedAt = new Date().toISOString()
 
         startTransition(() => {
           setItems(nextItems)
-          setWarnings(dedupeWarnings(nextResult.warnings))
+          setWarnings(freshWarnings)
           setSelectedItem((currentSelection) => {
             if (!currentSelection) {
               return null
@@ -234,17 +288,21 @@ function App() {
 
             return nextItems.find((item) => item.id === currentSelection.id) ?? null
           })
-          setLastUpdated(new Date().toISOString())
+          setLastUpdated(freshLoadedAt)
         })
-
-        const normalizedShareUrl = settings.sharedListUrl.trim()
+        setShowingCachedData(false)
 
         if (normalizedShareUrl) {
           upsertSavedListLink({
             url: normalizedShareUrl,
             name: deriveListName(normalizedShareUrl),
-            lastLoadedAt: new Date().toISOString(),
+            lastLoadedAt: freshLoadedAt,
           })
+          upsertCachedList(normalizedShareUrl, {
+            items: nextItems,
+            warnings: freshWarnings,
+            cachedAt: freshLoadedAt,
+          } satisfies CachedListData)
           setSavedListLinks(loadSavedListLinks())
         }
 
@@ -319,17 +377,29 @@ function App() {
           }
         }
       } catch (caughtError) {
-        setWarnings([])
+        if (cachedList?.items.length) {
+          setWarnings((currentWarnings) =>
+            dedupeWarnings([
+              ...currentWarnings,
+              'Live refresh failed. Showing locally cached list data from this browser.',
+            ]),
+          )
+          setError('')
+          setShowingCachedData(true)
+        } else {
+          setWarnings([])
+          setError(
+            caughtError instanceof Error
+              ? caughtError.message
+              : 'The shared Plex list request failed for an unknown reason.',
+          )
+        }
+
         setTmdbProgress({
           active: false,
           processed: 0,
           total: 0,
         })
-        setError(
-          caughtError instanceof Error
-            ? caughtError.message
-            : 'The shared Plex list request failed for an unknown reason.',
-        )
       } finally {
         if (!isCancelled) {
           setLoading(false)
@@ -378,6 +448,7 @@ function App() {
       sharedListUrl: draftSettings.sharedListUrl.trim(),
     }
 
+    forceRefreshRef.current = true
     saveSettings(nextSettings)
     setSettings(nextSettings)
 
@@ -395,6 +466,7 @@ function App() {
       sharedListUrl: url.trim(),
     }
 
+    forceRefreshRef.current = true
     setDraftSettings(nextSettings)
     saveSettings(nextSettings)
     setSettings(nextSettings)
@@ -402,6 +474,7 @@ function App() {
 
   const handleRemoveSavedList = (url: string) => {
     deleteSavedListLink(url)
+    deleteCachedList(url)
     setSavedListLinks(loadSavedListLinks())
   }
 
@@ -504,9 +577,8 @@ function App() {
           </label>
 
           <p className="panel-note">
-            The share link is saved in your browser only. List data is fetched through the Appwrite
-            scraper function. If you move this app to a new domain, add that origin as a Web
-            platform in Appwrite.
+            Share links and list snapshots are saved only in this browser. The app can show cached
+            results instantly while refreshing from the Appwrite scraper in the background.
           </p>
 
           {savedListLinks.length ? (
@@ -666,6 +738,7 @@ function App() {
           <div className="status-cluster">
             {lastUpdated ? <span>Updated {formatDate(lastUpdated)}</span> : null}
             {loading ? <span>Loading list...</span> : null}
+            {showingCachedData ? <span>Viewing cached data</span> : null}
             {showEnrichmentLoading ? (
               <span>
                 Enhancing metadata {tmdbProgress.processed}/{tmdbProgress.total}
