@@ -723,20 +723,6 @@ async function enrichItemsWithTmdb(items, warnings, log, options = {}) {
     }
   })
 
-  if (appliedTmdbRating) {
-    pushUniqueWarning(
-      warnings,
-      'Some ratings were filled from TMDB where Plex did not provide a rating.',
-    )
-  }
-
-  if (appliedTmdbImage) {
-    pushUniqueWarning(
-      warnings,
-      'Some posters or backdrops were filled from TMDB when available.',
-    )
-  }
-
   return items.map((item) => enrichedItemsById.get(item.id) ?? item)
 }
 

@@ -519,6 +519,15 @@
   background: rgba(118, 35, 21, 0.24);
 }
 
+.cached-data-chip {
+  color: #ffd8aa;
+}
+
+.cached-refresh-button {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.78rem;
+}
+
 .warning-banner {
   margin: 0 0 0.9rem;
   border: 1px solid rgba(255, 188, 122, 0.38);
@@ -549,7 +558,7 @@
 
 .loading-skeleton-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr));
   gap: 0.8rem;
   margin-bottom: 0.4rem;
 }
@@ -598,7 +607,7 @@
 
 .media-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr));
   gap: 0.8rem;
 }
 

@@ -7,6 +7,7 @@ import {
   fetchTmdbEnrichment,
   filterItems,
   isReleased,
+  normalizeWarnings,
   pickRandomItem,
   sortItems,
   type PlexWatchlistItem,
@@ -109,6 +110,15 @@ function mergeItemsById(
 ) {
   const incomingMap = new Map(incomingItems.map((item) => [item.id, item]))
   return currentItems.map((item) => incomingMap.get(item.id) ?? item)
+}
+
+function isListEnriched(items: PlexWatchlistItem[]) {
+  return items.some(
+    (item) =>
+      item.ratingSource === 'tmdb' ||
+      item.audienceRatingSource === 'tmdb' ||
+      item.imageSource === 'tmdb',
+  )
 }
 
 function buildPriorityOrder(
@@ -224,6 +234,98 @@ function App() {
       }
     }
 
+    const runEnrichment = async (args: {
+      normalizedShareUrl: string
+      startingItems: PlexWatchlistItem[]
+      freshWarnings: string[]
+      freshLoadedAt: string
+      getIsCancelled: () => boolean
+    }) => {
+      const { normalizedShareUrl, startingItems, freshWarnings, freshLoadedAt, getIsCancelled } =
+        args
+
+      const prioritizedItems = buildPriorityOrder(
+        startingItems,
+        filtersRef.current,
+        sortRef.current,
+      )
+      const batches = chunkItems(prioritizedItems, ENRICHMENT_BATCH_SIZE)
+
+      if (!batches.length) {
+        return
+      }
+
+      setTmdbProgress({
+        active: true,
+        processed: 0,
+        total: prioritizedItems.length,
+      })
+
+      let processedCount = 0
+      let cachedItems = startingItems
+
+      for (const batch of batches) {
+        if (getIsCancelled()) {
+          return
+        }
+
+        try {
+          const enrichmentResult = await fetchTmdbEnrichment(batch)
+
+          if (getIsCancelled()) {
+            return
+          }
+
+          processedCount = Math.min(prioritizedItems.length, processedCount + batch.length)
+          cachedItems = mergeItemsById(cachedItems, enrichmentResult.items)
+
+          if (normalizedShareUrl) {
+            upsertCachedList(normalizedShareUrl, {
+              items: cachedItems,
+              warnings: freshWarnings,
+              cachedAt: freshLoadedAt,
+            } satisfies CachedListData)
+          }
+
+          startTransition(() => {
+            setItems((currentItems) => mergeItemsById(currentItems, enrichmentResult.items))
+            setSelectedItem((currentSelection) => {
+              if (!currentSelection) {
+                return null
+              }
+
+              return (
+                enrichmentResult.items.find((item) => item.id === currentSelection.id) ??
+                currentSelection
+              )
+            })
+
+            if (enrichmentResult.warnings.length) {
+              setWarnings((currentWarnings) =>
+                dedupeWarnings([...currentWarnings, ...enrichmentResult.warnings]),
+              )
+            }
+          })
+        } catch {
+          processedCount = Math.min(prioritizedItems.length, processedCount + batch.length)
+          setWarnings((currentWarnings) =>
+            dedupeWarnings([
+              ...currentWarnings,
+              'TMDB enrichment was partially skipped because one background request failed.',
+            ]),
+          )
+        } finally {
+          if (!getIsCancelled()) {
+            setTmdbProgress({
+              active: processedCount < prioritizedItems.length,
+              processed: processedCount,
+              total: prioritizedItems.length,
+            })
+          }
+        }
+      }
+    }
+
     const loadWatchlist = async () => {
       const normalizedShareUrl = settings.sharedListUrl.trim()
       const forceRefresh = forceRefreshRef.current
@@ -244,7 +346,7 @@ function App() {
       if (cachedList) {
         startTransition(() => {
           setItems(cachedList.items)
-          setWarnings(dedupeWarnings(cachedList.warnings))
+          setWarnings(dedupeWarnings(normalizeWarnings(cachedList.warnings)))
           setSelectedItem((currentSelection) => {
             if (!currentSelection) {
               return null
@@ -256,14 +358,26 @@ function App() {
         })
       }
 
-      if (shouldSkipRemoteRefresh) {
+      if (shouldSkipRemoteRefresh && cachedList) {
         setWarnings(
           dedupeWarnings([
-            ...(cachedList?.warnings ?? []),
+            ...normalizeWarnings(cachedList.warnings),
             'Using cached list data from this browser. Press "Load list" to refresh from Plex now.',
           ]),
         )
         setLoading(false)
+
+        if (isListEnriched(cachedList.items)) {
+          return
+        }
+
+        await runEnrichment({
+          normalizedShareUrl,
+          startingItems: cachedList.items,
+          freshWarnings: dedupeWarnings(normalizeWarnings(cachedList.warnings)),
+          freshLoadedAt: cachedList.cachedAt,
+          getIsCancelled: () => isCancelled,
+        })
         return
       }
 
@@ -310,72 +424,13 @@ function App() {
           setLoading(false)
         }
 
-        const prioritizedItems = buildPriorityOrder(nextItems, filtersRef.current, sortRef.current)
-        const batches = chunkItems(prioritizedItems, ENRICHMENT_BATCH_SIZE)
-
-        if (!batches.length) {
-          return
-        }
-
-        setTmdbProgress({
-          active: true,
-          processed: 0,
-          total: prioritizedItems.length,
+        await runEnrichment({
+          normalizedShareUrl,
+          startingItems: nextItems,
+          freshWarnings,
+          freshLoadedAt,
+          getIsCancelled: () => isCancelled,
         })
-
-        let processedCount = 0
-
-        for (const batch of batches) {
-          if (isCancelled) {
-            return
-          }
-
-          try {
-            const enrichmentResult = await fetchTmdbEnrichment(batch)
-
-            if (isCancelled) {
-              return
-            }
-
-            processedCount = Math.min(prioritizedItems.length, processedCount + batch.length)
-
-            startTransition(() => {
-              setItems((currentItems) => mergeItemsById(currentItems, enrichmentResult.items))
-              setSelectedItem((currentSelection) => {
-                if (!currentSelection) {
-                  return null
-                }
-
-                return (
-                  enrichmentResult.items.find((item) => item.id === currentSelection.id) ??
-                  currentSelection
-                )
-              })
-
-              if (enrichmentResult.warnings.length) {
-                setWarnings((currentWarnings) =>
-                  dedupeWarnings([...currentWarnings, ...enrichmentResult.warnings]),
-                )
-              }
-            })
-          } catch {
-            processedCount = Math.min(prioritizedItems.length, processedCount + batch.length)
-            setWarnings((currentWarnings) =>
-              dedupeWarnings([
-                ...currentWarnings,
-                'TMDB enrichment was partially skipped because one background request failed.',
-              ]),
-            )
-          } finally {
-            if (!isCancelled) {
-              setTmdbProgress({
-                active: processedCount < prioritizedItems.length,
-                processed: processedCount,
-                total: prioritizedItems.length,
-              })
-            }
-          }
-        }
       } catch (caughtError) {
         if (cachedList?.items.length) {
           setWarnings((currentWarnings) =>
@@ -459,6 +514,11 @@ function App() {
       setLastUpdated('')
       setError('Paste a public Plex share link to load a list.')
     }
+  }
+
+  const handleForceRefresh = () => {
+    forceRefreshRef.current = true
+    setSettings((current) => ({ ...current }))
   }
 
   const handleLoadSavedList = (url: string) => {
@@ -738,7 +798,14 @@ function App() {
           <div className="status-cluster">
             {lastUpdated ? <span>Updated {formatDate(lastUpdated)}</span> : null}
             {loading ? <span>Loading list...</span> : null}
-            {showingCachedData ? <span>Viewing cached data</span> : null}
+            {showingCachedData ? (
+              <>
+                <span className="cached-data-chip">Viewing cached data</span>
+                <button className="ghost-button cached-refresh-button" onClick={handleForceRefresh}>
+                  Refresh
+                </button>
+              </>
+            ) : null}
             {showEnrichmentLoading ? (
               <span>
                 Enhancing metadata {tmdbProgress.processed}/{tmdbProgress.total}
@@ -747,11 +814,13 @@ function App() {
           </div>
         </div>
 
-        {warnings.length ? (
+        {warnings.filter((w) => !w.startsWith('Using cached list data')).length ? (
           <div className="warning-banner">
-            {warnings.map((warning) => (
-              <p key={warning}>{warning}</p>
-            ))}
+            {warnings
+              .filter((w) => !w.startsWith('Using cached list data'))
+              .map((warning) => (
+                <p key={warning}>{warning}</p>
+              ))}
           </div>
         ) : null}
 
@@ -761,10 +830,16 @@ function App() {
           <div className="loading-state" aria-live="polite" aria-busy="true">
             <div className="loading-spinner" aria-hidden="true" />
             <div className="loading-copy">
-              <p className="loading-title">Loading Plex list</p>
-              <p>
-                Pulling pages and metadata. This can take up to a minute for large shared lists.
-              </p>
+              {items.length ? (
+                <p className="loading-title">Updating</p>
+              ) : (
+                <>
+                  <p className="loading-title">Loading Plex list</p>
+                  <p>
+                    Pulling pages and metadata. This can take up to a minute for large shared lists.
+                  </p>
+                </>
+              )}
             </div>
           </div>
         ) : null}

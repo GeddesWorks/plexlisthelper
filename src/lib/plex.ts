@@ -134,27 +134,21 @@ async function requestScraperExecution({ body, xpath }: ScraperExecutionRequest)
   }
 }
 
-function normalizeWarnings(warnings: string[]) {
+export function normalizeWarnings(warnings: string[]) {
   const nextWarnings = new Set<string>()
-  let hasMetadataWarning = false
 
   for (const warning of warnings) {
     if (
       warning.startsWith('Metadata lookup failed') ||
       warning.startsWith('Metadata lookup threw') ||
-      warning.startsWith('Metadata for ')
+      warning.startsWith('Metadata for ') ||
+      warning.startsWith('Some ratings were filled from TMDB') ||
+      warning.startsWith('Some posters or backdrops were filled from TMDB')
     ) {
-      hasMetadataWarning = true
       continue
     }
 
     nextWarnings.add(warning)
-  }
-
-  if (hasMetadataWarning) {
-    nextWarnings.add(
-      'Some titles only returned basic public metadata, so ratings, genres, or summaries may be missing.',
-    )
   }
 
   return [...nextWarnings]
