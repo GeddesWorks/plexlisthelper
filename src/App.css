@@ -267,6 +267,79 @@
   gap: 0.95rem;
 }
 
+.mode-tabs {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.3rem;
+  background: rgba(247, 241, 228, 0.05);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+}
+
+.mode-tab {
+  flex: 1;
+  padding: 0.42rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.mode-tab:hover {
+  color: var(--text-main);
+}
+
+.mode-tab.is-active {
+  background: rgba(247, 241, 228, 0.08);
+  border-color: var(--border-soft);
+  color: var(--text-main);
+}
+
+.plex-signin-button {
+  width: 100%;
+  justify-content: center;
+}
+
+.watchlist-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.watchlist-divider::before,
+.watchlist-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-soft);
+}
+
+.watchlist-token-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.watchlist-token-set {
+  font-size: 0.9rem;
+  color: #a8e6a3;
+}
+
+.watchlist-oauth-pending {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.watchlist-oauth-pending p {
+  margin: 0;
+}
+
 .filter-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -519,6 +592,15 @@
   background: rgba(118, 35, 21, 0.24);
 }
 
+.cached-data-chip {
+  color: #ffd8aa;
+}
+
+.cached-refresh-button {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.78rem;
+}
+
 .warning-banner {
   margin: 0 0 0.9rem;
   border: 1px solid rgba(255, 188, 122, 0.38);
@@ -549,7 +631,7 @@
 
 .loading-skeleton-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr));
   gap: 0.8rem;
   margin-bottom: 0.4rem;
 }
@@ -598,7 +680,7 @@
 
 .media-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr));
   gap: 0.8rem;
 }
 

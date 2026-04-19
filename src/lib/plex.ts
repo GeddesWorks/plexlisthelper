@@ -134,27 +134,21 @@ async function requestScraperExecution({ body, xpath }: ScraperExecutionRequest)
   }
 }
 
-function normalizeWarnings(warnings: string[]) {
+export function normalizeWarnings(warnings: string[]) {
   const nextWarnings = new Set<string>()
-  let hasMetadataWarning = false
 
   for (const warning of warnings) {
     if (
       warning.startsWith('Metadata lookup failed') ||
       warning.startsWith('Metadata lookup threw') ||
-      warning.startsWith('Metadata for ')
+      warning.startsWith('Metadata for ') ||
+      warning.startsWith('Some ratings were filled from TMDB') ||
+      warning.startsWith('Some posters or backdrops were filled from TMDB')
     ) {
-      hasMetadataWarning = true
       continue
     }
 
     nextWarnings.add(warning)
-  }
-
-  if (hasMetadataWarning) {
-    nextWarnings.add(
-      'Some titles only returned basic public metadata, so ratings, genres, or summaries may be missing.',
-    )
   }
 
   return [...nextWarnings]
@@ -242,6 +236,67 @@ export async function fetchTmdbEnrichment(items: PlexWatchlistItem[]): Promise<S
   })
 
   return parseScraperExecution(execution)
+}
+
+export async function fetchMyWatchlist(plexToken: string): Promise<SharedListResult> {
+  const execution = await requestScraperExecution({
+    xpath: '/watchlist',
+    body: { plexToken },
+  })
+  return parseScraperExecution(execution)
+}
+
+const PLEX_OAUTH_CLIENT_ID = 'plex-list-picker-web'
+const PLEX_OAUTH_PRODUCT = 'Plex List Picker'
+
+const plexOAuthHeaders = {
+  Accept: 'application/json',
+  'Content-Type': 'application/x-www-form-urlencoded',
+  'X-Plex-Product': PLEX_OAUTH_PRODUCT,
+  'X-Plex-Client-Identifier': PLEX_OAUTH_CLIENT_ID,
+  'X-Plex-Version': '1.0.0',
+}
+
+export type PlexOAuthPin = {
+  id: number
+  code: string
+  authUrl: string
+}
+
+export async function startPlexOAuth(): Promise<PlexOAuthPin> {
+  const response = await fetch('https://plex.tv/api/v2/pins', {
+    method: 'POST',
+    headers: plexOAuthHeaders,
+    body: new URLSearchParams({ strong: 'true' }),
+  })
+
+  if (!response.ok) {
+    throw new Error('Failed to initiate Plex sign-in. Please try again.')
+  }
+
+  const data = (await response.json()) as { id: number; code: string }
+  const authUrl =
+    `https://app.plex.tv/auth/#?clientID=${PLEX_OAUTH_CLIENT_ID}` +
+    `&code=${data.code}` +
+    `&context[device][product]=${encodeURIComponent(PLEX_OAUTH_PRODUCT)}`
+
+  return { id: data.id, code: data.code, authUrl }
+}
+
+export async function pollPlexOAuthToken(pinId: number): Promise<string | null> {
+  const response = await fetch(`https://plex.tv/api/v2/pins/${pinId}`, {
+    headers: {
+      Accept: 'application/json',
+      'X-Plex-Client-Identifier': PLEX_OAUTH_CLIENT_ID,
+    },
+  })
+
+  if (!response.ok) {
+    return null
+  }
+
+  const data = (await response.json()) as { authToken?: string | null }
+  return data.authToken ?? null
 }
 
 export function buildArtworkUrl(path: string) {

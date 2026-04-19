@@ -723,20 +723,6 @@ async function enrichItemsWithTmdb(items, warnings, log, options = {}) {
     }
   })
 
-  if (appliedTmdbRating) {
-    pushUniqueWarning(
-      warnings,
-      'Some ratings were filled from TMDB where Plex did not provide a rating.',
-    )
-  }
-
-  if (appliedTmdbImage) {
-    pushUniqueWarning(
-      warnings,
-      'Some posters or backdrops were filled from TMDB when available.',
-    )
-  }
-
   return items.map((item) => enrichedItemsById.get(item.id) ?? item)
 }
 
@@ -1576,6 +1562,119 @@ async function v2ScrapeListWithFetch(shareUrl, warnings, log) {
   }
 }
 
+function mapWatchlistApiItem(item, plexToken) {
+  const ratingKey = typeof item.ratingKey === 'string' ? item.ratingKey : ''
+  const guid = typeof item.guid === 'string' ? item.guid : ''
+  const title = typeof item.title === 'string' ? item.title.trim() : ''
+
+  if (!title) {
+    return null
+  }
+
+  const type = item.type === 'show' ? 'show' : 'movie'
+  const id = ratingKey || guid || `${type}-${title}`
+  const year = typeof item.year === 'number' ? item.year : null
+
+  const thumb =
+    typeof item.thumb === 'string' && item.thumb
+      ? `${METADATA_BASE_URL}${item.thumb}?X-Plex-Token=${plexToken}`
+      : ''
+  const art =
+    typeof item.art === 'string' && item.art
+      ? `${METADATA_BASE_URL}${item.art}?X-Plex-Token=${plexToken}`
+      : ''
+
+  const genres = Array.isArray(item.Genre)
+    ? item.Genre.map((g) => (typeof g.tag === 'string' ? g.tag : '')).filter(Boolean)
+    : []
+
+  const rating = typeof item.rating === 'number' ? item.rating : null
+  const audienceRating = typeof item.audienceRating === 'number' ? item.audienceRating : null
+
+  const watchlistedAt =
+    typeof item.addedAt === 'number' ? new Date(item.addedAt * 1000).toISOString() : ''
+
+  return {
+    id,
+    ratingKey,
+    guid,
+    type,
+    title,
+    titleSort: typeof item.titleSort === 'string' ? item.titleSort : title,
+    year,
+    summary: typeof item.summary === 'string' ? item.summary : '',
+    tagline: typeof item.tagline === 'string' ? item.tagline : '',
+    studio: typeof item.studio === 'string' ? item.studio : '',
+    contentRating: typeof item.contentRating === 'string' ? item.contentRating : '',
+    durationMinutes:
+      typeof item.duration === 'number' ? Math.round(item.duration / 60000) : null,
+    childCount: typeof item.childCount === 'number' ? item.childCount : null,
+    thumb,
+    art,
+    genres,
+    rating,
+    audienceRating,
+    ratingSource: rating !== null ? 'plex' : '',
+    audienceRatingSource: audienceRating !== null ? 'plex' : '',
+    imageSource: thumb ? 'plex' : '',
+    originallyAvailableAt:
+      typeof item.originallyAvailableAt === 'string'
+        ? item.originallyAvailableAt
+        : year
+          ? `${year}-01-01`
+          : '',
+    watchlistedAt,
+  }
+}
+
+async function fetchPlexWatchlistItems(plexToken, log) {
+  const headers = {
+    ...PLEX_HEADERS,
+    Accept: 'application/json',
+    'X-Plex-Token': plexToken,
+  }
+
+  const pageSize = 100
+  let offset = 0
+  const allItems = []
+
+  while (true) {
+    const url = `${METADATA_BASE_URL}/library/sections/watchlist/all?X-Plex-Container-Start=${offset}&X-Plex-Container-Size=${pageSize}`
+    log(`Fetching watchlist page offset=${offset}`)
+
+    const response = await fetch(url, { headers })
+
+    if (response.status === 401) {
+      throw new Error('Invalid or expired Plex token. Please check your token and try again.')
+    }
+
+    if (!response.ok) {
+      throw new Error(`Plex watchlist API returned ${response.status}.`)
+    }
+
+    const data = await response.json()
+    const metadata = Array.isArray(data?.MediaContainer?.Metadata)
+      ? data.MediaContainer.Metadata
+      : []
+
+    allItems.push(...metadata)
+
+    const totalSize =
+      typeof data?.MediaContainer?.totalSize === 'number'
+        ? data.MediaContainer.totalSize
+        : metadata.length
+
+    offset += metadata.length
+
+    if (metadata.length === 0 || offset >= totalSize) {
+      break
+    }
+  }
+
+  log(`Fetched ${allItems.length} watchlist items`)
+  return allItems.map((item) => mapWatchlistApiItem(item, plexToken)).filter(Boolean)
+}
+
 export default async ({ req, res, log, error }) => {
   if (req.method === 'OPTIONS') {
     return res.text('', 204, CORS_HEADERS)
@@ -1595,6 +1694,7 @@ export default async ({ req, res, log, error }) => {
   const bodyObject = readBodyObject(req.body)
   const requestPath = typeof req.path === 'string' ? req.path : '/'
   const isTmdbEnrichmentRoute = requestPath === '/tmdb-enrich' || requestPath === 'tmdb-enrich'
+  const isWatchlistRoute = requestPath === '/watchlist' || requestPath === 'watchlist'
 
   if (isTmdbEnrichmentRoute) {
     if (req.method !== 'POST') {
@@ -1654,6 +1754,44 @@ export default async ({ req, res, log, error }) => {
         500,
         CORS_HEADERS,
       )
+    }
+  }
+
+  if (isWatchlistRoute) {
+    if (req.method !== 'POST') {
+      return res.json(
+        { ok: false, error: 'Watchlist route only supports POST requests.' },
+        405,
+        CORS_HEADERS,
+      )
+    }
+
+    const plexToken =
+      typeof bodyObject?.plexToken === 'string' ? bodyObject.plexToken.trim() : ''
+
+    if (!plexToken) {
+      return res.json(
+        { ok: false, error: 'Provide a plexToken in the POST body.' },
+        400,
+        CORS_HEADERS,
+      )
+    }
+
+    try {
+      const warnings = []
+      const items = await fetchPlexWatchlistItems(plexToken, log)
+      const enrichedItems = await enrichItems(items, warnings, log, { tmdbMode: 'none' })
+
+      return res.json({ ok: true, items: enrichedItems, warnings }, 200, CORS_HEADERS)
+    } catch (caughtError) {
+      const message =
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Failed to fetch Plex watchlist for an unknown reason.'
+
+      error(message)
+
+      return res.json({ ok: false, error: message }, 500, CORS_HEADERS)
     }
   }
 

@@ -1,7 +1,11 @@
 import type { PlexWatchlistItem } from './plex'
 
+export type AppMode = 'shared-list' | 'my-watchlist'
+
 export type PlexSettings = {
   sharedListUrl: string
+  plexToken: string
+  appMode: AppMode
 }
 
 const STORAGE_KEY = 'plex-list-picker.settings.v2'
@@ -29,6 +33,8 @@ type CachedListEntry = CachedListData & {
 
 export const defaultSettings: PlexSettings = {
   sharedListUrl: '',
+  plexToken: '',
+  appMode: 'shared-list',
 }
 
 export function loadSettings(): PlexSettings {
@@ -43,6 +49,8 @@ export function loadSettings(): PlexSettings {
 
     return {
       sharedListUrl: parsed.sharedListUrl?.trim() ?? '',
+      plexToken: parsed.plexToken?.trim() ?? '',
+      appMode: parsed.appMode === 'my-watchlist' ? 'my-watchlist' : 'shared-list',
     }
   } catch {
     return defaultSettings
