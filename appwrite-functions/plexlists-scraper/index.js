@@ -1448,7 +1448,7 @@ async function v2FetchNextLumaPage(nextUrl, shareUrl, shareCookieHeader, auth, l
   throw lastError ?? new Error('All pagination strategies failed.')
 }
 
-async function v2PaginatePublicList(initialItems, initialNextUrl, shareUrl, shareCookieHeader, warnings, log) {
+async function v2PaginatePublicList(initialItems, initialNextUrl, shareUrl, shareCookieHeader, warnings, log, preferredAuth) {
   const itemMap = new Map()
   addItemsByPath(itemMap, initialItems)
 
@@ -1462,16 +1462,18 @@ async function v2PaginatePublicList(initialItems, initialNextUrl, shareUrl, shar
     }
   }
 
-  let auth = null
+  let auth = preferredAuth ?? null
 
-  try {
-    auth = await v2CreateAnonymousAuth(log)
-  } catch (caughtError) {
-    log(
-      `Anonymous auth setup failed: ${
-        caughtError instanceof Error ? caughtError.message : String(caughtError)
-      }`,
-    )
+  if (!auth) {
+    try {
+      auth = await v2CreateAnonymousAuth(log)
+    } catch (caughtError) {
+      log(
+        `Anonymous auth setup failed: ${
+          caughtError instanceof Error ? caughtError.message : String(caughtError)
+        }`,
+      )
+    }
   }
 
   const seenUrls = new Set()
@@ -1533,19 +1535,66 @@ async function v2PaginatePublicList(initialItems, initialNextUrl, shareUrl, shar
   }
 }
 
-async function v2ScrapeListWithFetch(shareUrl, warnings, log) {
+async function v2ScrapeListWithFetch(shareUrl, warnings, log, plexToken) {
+  const extraHeaders = {}
+
+  if (plexToken) {
+    extraHeaders['x-plex-token'] = plexToken
+    extraHeaders['cookie'] = `token=${plexToken}; myPlexAccessToken=${plexToken}`
+  }
+
   const shareResponse = await fetch(shareUrl.toString(), {
     headers: {
       'user-agent': V2_DEFAULT_USER_AGENT,
+      ...extraHeaders,
     },
   })
+
+  if (shareResponse.status === 401 || shareResponse.status === 403) {
+    throw new Error(
+      plexToken
+        ? "This list is private and your Plex account doesn't have access to it."
+        : "This list is private. Sign in with Plex and try again, or make the list public.",
+    )
+  }
+
+  if (shareResponse.status === 404) {
+    throw new Error(
+      plexToken
+        ? 'List not found. The link may be wrong or the list may have been removed.'
+        : "List not found. If it's a private list, sign in with Plex and try again, or make the list public.",
+    )
+  }
 
   if (!shareResponse.ok) {
     throw new Error(`Share page request failed with ${shareResponse.status}.`)
   }
 
   const shareCookieHeader = v2CookieHeaderFromSetCookie(v2ReadSetCookieHeaders(shareResponse))
-  const parsed = parsePublicListHtml(await shareResponse.text())
+  const htmlText = await shareResponse.text()
+
+  let parsed
+
+  try {
+    parsed = parsePublicListHtml(htmlText)
+  } catch (parseError) {
+    if (!plexToken) {
+      throw new Error(
+        "This list couldn't be loaded. It may be private — sign in with Plex and try again, or make the list public.",
+      )
+    }
+
+    throw parseError
+  }
+
+  const preferredAuth = plexToken
+    ? {
+        token: plexToken,
+        cookieHeader: '',
+        clientIdentifier: 'plex-list-picker-web',
+      }
+    : null
+
   const paginated = await v2PaginatePublicList(
     parsed.items,
     parsed.nextUrl,
@@ -1553,6 +1602,7 @@ async function v2ScrapeListWithFetch(shareUrl, warnings, log) {
     shareCookieHeader,
     warnings,
     log,
+    preferredAuth,
   )
 
   return {
@@ -1810,6 +1860,9 @@ export default async ({ req, res, log, error }) => {
     )
   }
 
+  const plexToken =
+    typeof bodyObject?.plexToken === 'string' ? bodyObject.plexToken.trim() : ''
+
   try {
     const shareUrl = normalizeShareUrl(rawShareUrl)
     const tmdbMode =
@@ -1817,7 +1870,7 @@ export default async ({ req, res, log, error }) => {
       readTmdbModeFromBody(req.body) ||
       'auto'
     const warnings = []
-    const scraped = await v2ScrapeListWithFetch(shareUrl, warnings, log)
+    const scraped = await v2ScrapeListWithFetch(shareUrl, warnings, log, plexToken || undefined)
 
     if (scraped.nextUrl && scraped.items.length <= scraped.initialCount) {
       pushUniqueWarning(
