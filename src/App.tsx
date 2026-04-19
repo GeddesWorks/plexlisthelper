@@ -3,13 +3,17 @@ import './App.css'
 import tmdbLogo from './assets/tmdb-logo.svg'
 import {
   buildArtworkUrl,
+  fetchMyWatchlist,
   fetchSharedListFast,
   fetchTmdbEnrichment,
   filterItems,
   isReleased,
   normalizeWarnings,
   pickRandomItem,
+  pollPlexOAuthToken,
   sortItems,
+  startPlexOAuth,
+  type PlexOAuthPin,
   type PlexWatchlistItem,
   type SortOption,
   type WatchlistFilters,
@@ -24,6 +28,7 @@ import {
   saveSettings,
   upsertCachedList,
   upsertSavedListLink,
+  type AppMode,
   type CachedListData,
   type PlexSettings,
   type SavedListLink,
@@ -195,6 +200,8 @@ function App() {
     processed: 0,
     total: 0,
   })
+  const [oauthPending, setOauthPending] = useState<PlexOAuthPin | null>(null)
+  const oauthPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const filtersRef = useRef(filters)
   const sortRef = useRef(sort)
   const forceRefreshRef = useRef(false)
@@ -204,6 +211,12 @@ function App() {
     setSettings(storedSettings)
     setDraftSettings(storedSettings)
     setSavedListLinks(loadSavedListLinks())
+
+    return () => {
+      if (oauthPollRef.current) {
+        clearInterval(oauthPollRef.current)
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -217,18 +230,21 @@ function App() {
   useEffect(() => {
     let isCancelled = false
 
-    if (!settings.sharedListUrl) {
+    const isMyWatchlistMode = settings.appMode === 'my-watchlist'
+    const hasSource = isMyWatchlistMode ? !!settings.plexToken : !!settings.sharedListUrl
+
+    if (!hasSource) {
       setItems([])
       setSelectedItem(null)
       setWarnings([])
       setLastUpdated('')
       setShowingCachedData(false)
-      setTmdbProgress({
-        active: false,
-        processed: 0,
-        total: 0,
-      })
-      setError('Paste a public Plex share link to load a list.')
+      setTmdbProgress({ active: false, processed: 0, total: 0 })
+      setError(
+        isMyWatchlistMode
+          ? 'Enter your Plex token or sign in with Plex to load your watchlist.'
+          : 'Paste a public Plex share link to load a list.',
+      )
       return () => {
         isCancelled = true
       }
@@ -327,7 +343,9 @@ function App() {
     }
 
     const loadWatchlist = async () => {
-      const normalizedShareUrl = settings.sharedListUrl.trim()
+      const normalizedShareUrl = isMyWatchlistMode
+        ? 'plex://my-watchlist'
+        : settings.sharedListUrl.trim()
       const forceRefresh = forceRefreshRef.current
       forceRefreshRef.current = false
       const cachedList = loadCachedList(normalizedShareUrl)
@@ -382,7 +400,9 @@ function App() {
       }
 
       try {
-        const nextResult = await fetchSharedListFast(settings, 'none')
+        const nextResult = isMyWatchlistMode
+          ? await fetchMyWatchlist(settings.plexToken)
+          : await fetchSharedListFast(settings, 'none')
 
         if (isCancelled) {
           return
@@ -407,17 +427,19 @@ function App() {
         setShowingCachedData(false)
 
         if (normalizedShareUrl) {
-          upsertSavedListLink({
-            url: normalizedShareUrl,
-            name: deriveListName(normalizedShareUrl),
-            lastLoadedAt: freshLoadedAt,
-          })
+          if (!isMyWatchlistMode) {
+            upsertSavedListLink({
+              url: normalizedShareUrl,
+              name: deriveListName(normalizedShareUrl),
+              lastLoadedAt: freshLoadedAt,
+            })
+            setSavedListLinks(loadSavedListLinks())
+          }
           upsertCachedList(normalizedShareUrl, {
             items: nextItems,
             warnings: freshWarnings,
             cachedAt: freshLoadedAt,
           } satisfies CachedListData)
-          setSavedListLinks(loadSavedListLinks())
         }
 
         if (!isCancelled) {
@@ -499,20 +521,28 @@ function App() {
   const handleSaveSettings = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
-    const nextSettings = {
+    const nextSettings: PlexSettings = {
+      ...draftSettings,
       sharedListUrl: draftSettings.sharedListUrl.trim(),
+      plexToken: draftSettings.plexToken.trim(),
     }
 
     forceRefreshRef.current = true
     saveSettings(nextSettings)
     setSettings(nextSettings)
 
-    if (!nextSettings.sharedListUrl) {
+    const isMyWatchlist = nextSettings.appMode === 'my-watchlist'
+    const hasSource = isMyWatchlist ? !!nextSettings.plexToken : !!nextSettings.sharedListUrl
+    if (!hasSource) {
       setItems([])
       setSelectedItem(null)
       setWarnings([])
       setLastUpdated('')
-      setError('Paste a public Plex share link to load a list.')
+      setError(
+        isMyWatchlist
+          ? 'Enter your Plex token or sign in with Plex to load your watchlist.'
+          : 'Paste a public Plex share link to load a list.',
+      )
     }
   }
 
@@ -522,10 +552,7 @@ function App() {
   }
 
   const handleLoadSavedList = (url: string) => {
-    const nextSettings = {
-      sharedListUrl: url.trim(),
-    }
-
+    const nextSettings = { ...settings, sharedListUrl: url.trim(), appMode: 'shared-list' as AppMode }
     forceRefreshRef.current = true
     setDraftSettings(nextSettings)
     saveSettings(nextSettings)
@@ -536,6 +563,58 @@ function App() {
     deleteSavedListLink(url)
     deleteCachedList(url)
     setSavedListLinks(loadSavedListLinks())
+  }
+
+  const handleSwitchMode = (mode: AppMode) => {
+    const nextSettings = { ...settings, appMode: mode }
+    setDraftSettings(nextSettings)
+    saveSettings(nextSettings)
+    setSettings(nextSettings)
+  }
+
+  const handleStartPlexOAuth = async () => {
+    try {
+      const pin = await startPlexOAuth()
+      setOauthPending(pin)
+      window.open(pin.authUrl, '_blank', 'noopener,noreferrer')
+
+      oauthPollRef.current = setInterval(async () => {
+        const token = await pollPlexOAuthToken(pin.id)
+
+        if (token) {
+          clearInterval(oauthPollRef.current!)
+          oauthPollRef.current = null
+          setOauthPending(null)
+          const nextSettings = { ...settings, plexToken: token, appMode: 'my-watchlist' as AppMode }
+          setDraftSettings(nextSettings)
+          saveSettings(nextSettings)
+          forceRefreshRef.current = true
+          setSettings(nextSettings)
+        }
+      }, 2000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Plex sign-in failed.')
+    }
+  }
+
+  const handleCancelPlexOAuth = () => {
+    if (oauthPollRef.current) {
+      clearInterval(oauthPollRef.current)
+      oauthPollRef.current = null
+    }
+    setOauthPending(null)
+  }
+
+  const handleClearPlexToken = () => {
+    if (oauthPollRef.current) {
+      clearInterval(oauthPollRef.current)
+      oauthPollRef.current = null
+    }
+    setOauthPending(null)
+    const nextSettings = { ...settings, plexToken: '', appMode: 'shared-list' as AppMode }
+    setDraftSettings(nextSettings)
+    saveSettings(nextSettings)
+    setSettings(nextSettings)
   }
 
   const handleRandomPick = () => {
@@ -619,55 +698,136 @@ function App() {
           <div className="panel-header">
             <div>
               <p className="eyebrow">List Source</p>
-              <h2>Public share link</h2>
+              <h2>{settings.appMode === 'my-watchlist' ? 'My Watchlist' : 'Public share link'}</h2>
             </div>
             <button className="ghost-button" type="submit" disabled={loading}>
               {loading ? 'Loading...' : 'Load list'}
             </button>
           </div>
 
-          <label className="field">
-            <span>Plex share link</span>
-            <input
-              type="url"
-              value={draftSettings.sharedListUrl}
-              onChange={(event) => handleSettingChange('sharedListUrl', event.target.value)}
-              placeholder="https://watch.plex.tv/u/username/lists/your-list-slug"
-            />
-          </label>
+          <div className="mode-tabs">
+            <button
+              type="button"
+              className={`mode-tab${settings.appMode === 'shared-list' ? ' is-active' : ''}`}
+              onClick={() => handleSwitchMode('shared-list')}
+            >
+              Shared list
+            </button>
+            <button
+              type="button"
+              className={`mode-tab${settings.appMode === 'my-watchlist' ? ' is-active' : ''}`}
+              onClick={() => handleSwitchMode('my-watchlist')}
+            >
+              My Watchlist
+            </button>
+          </div>
 
-          <p className="panel-note">
-            Share links and list snapshots are saved only in this browser. The app can show cached
-            results instantly while refreshing from the Appwrite scraper in the background.
-          </p>
+          {settings.appMode === 'shared-list' ? (
+            <>
+              <label className="field">
+                <span>Plex share link</span>
+                <input
+                  type="url"
+                  value={draftSettings.sharedListUrl}
+                  onChange={(event) => handleSettingChange('sharedListUrl', event.target.value)}
+                  placeholder="https://watch.plex.tv/u/username/lists/your-list-slug"
+                />
+              </label>
 
-          {savedListLinks.length ? (
-            <section className="saved-lists" aria-label="Saved list links">
-              <p className="saved-lists-title">Recent links</p>
-              <div className="saved-lists-grid">
-                {savedListLinks.map((entry) => (
-                  <div className="saved-list-row" key={entry.url}>
-                    <button
-                      className="saved-list-load"
-                      type="button"
-                      onClick={() => handleLoadSavedList(entry.url)}
-                    >
-                      <span>{entry.name}</span>
-                      <small>{formatDate(entry.lastLoadedAt)}</small>
-                    </button>
-                    <button
-                      className="saved-list-remove"
-                      type="button"
-                      onClick={() => handleRemoveSavedList(entry.url)}
-                      aria-label={`Remove ${entry.name}`}
-                    >
-                      Remove
-                    </button>
+              <p className="panel-note">
+                Share links and list snapshots are saved only in this browser. The app can show
+                cached results instantly while refreshing in the background.
+              </p>
+
+              {savedListLinks.length ? (
+                <section className="saved-lists" aria-label="Saved list links">
+                  <p className="saved-lists-title">Recent links</p>
+                  <div className="saved-lists-grid">
+                    {savedListLinks.map((entry) => (
+                      <div className="saved-list-row" key={entry.url}>
+                        <button
+                          className="saved-list-load"
+                          type="button"
+                          onClick={() => handleLoadSavedList(entry.url)}
+                        >
+                          <span>{entry.name}</span>
+                          <small>{formatDate(entry.lastLoadedAt)}</small>
+                        </button>
+                        <button
+                          className="saved-list-remove"
+                          type="button"
+                          onClick={() => handleRemoveSavedList(entry.url)}
+                          aria-label={`Remove ${entry.name}`}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
+                </section>
+              ) : null}
+            </>
+          ) : (
+            <>
+              {settings.plexToken ? (
+                <div className="watchlist-token-row">
+                  <span className="watchlist-token-set">Plex account connected</span>
+                  <button
+                    type="button"
+                    className="ghost-button cached-refresh-button"
+                    onClick={handleClearPlexToken}
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              ) : oauthPending ? (
+                <div className="watchlist-oauth-pending">
+                  <p>Waiting for Plex sign-in…</p>
+                  <p className="panel-note">
+                    Complete sign-in in the Plex tab that opened. This page will update
+                    automatically.
+                  </p>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={handleCancelPlexOAuth}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="primary-button plex-signin-button"
+                    onClick={handleStartPlexOAuth}
+                  >
+                    Sign in with Plex
+                  </button>
+
+                  <div className="watchlist-divider">
+                    <span>or enter token manually</span>
+                  </div>
+
+                  <label className="field">
+                    <span>Plex token</span>
+                    <input
+                      type="password"
+                      value={draftSettings.plexToken}
+                      onChange={(event) => handleSettingChange('plexToken', event.target.value)}
+                      placeholder="xxxxxxxxxxxxxxxxxxxx"
+                      autoComplete="off"
+                    />
+                  </label>
+
+                  <p className="panel-note">
+                    Find your token in Plex by opening any media item, clicking ···, selecting
+                    "Get Info", then "View XML" — the token appears in the URL.
+                  </p>
+                </>
+              )}
+            </>
+          )}
 
           <p className="tmdb-attribution">
             <img src={tmdbLogo} alt="TMDB logo" />
