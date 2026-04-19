@@ -43,7 +43,7 @@ const DEFAULT_FILTERS: WatchlistFilters = {
 }
 
 const SORT_OPTIONS: Array<{ value: SortOption; label: string }> = [
-  { value: 'list:asc', label: 'Shared list order' },
+  { value: 'list:asc', label: 'Default order' },
   { value: 'titleSort:asc', label: 'Title A-Z' },
   { value: 'titleSort:desc', label: 'Title Z-A' },
   { value: 'originallyAvailableAt:desc', label: 'Newest release' },
@@ -953,7 +953,7 @@ function App() {
         <div className="panel-header">
           <div>
             <p className="eyebrow">List Viewer</p>
-            <h2>Current shared list</h2>
+            <h2>{settings.appMode === 'my-watchlist' ? 'My Watchlist' : 'Current list'}</h2>
           </div>
           <div className="status-cluster">
             {lastUpdated ? <span>Updated {formatDate(lastUpdated)}</span> : null}
@@ -1038,7 +1038,7 @@ function App() {
         {!showInitialLoading && !loading && !error && !filteredItems.length ? (
           <div className="empty-state">
             <h3>No titles match the current filters.</h3>
-            <p>Broaden the search, lower the rating threshold, or load a different share link.</p>
+            <p>Broaden the search, lower the rating threshold, or load a different list.</p>
           </div>
         ) : null}
 

@@ -197,12 +197,9 @@ function parseScraperExecution(execution: AppwriteExecution): SharedListResult {
 
 export async function fetchSharedList(settings: PlexSettings): Promise<SharedListResult> {
   const shareUrl = buildSharedListUrl(settings)
-  const execution = await requestScraperExecution({
-    body: {
-      url: shareUrl.toString(),
-      tmdbMode: 'auto',
-    },
-  })
+  const body: Record<string, unknown> = { url: shareUrl.toString(), tmdbMode: 'auto' }
+  if (settings.plexToken) body.plexToken = settings.plexToken
+  const execution = await requestScraperExecution({ body })
   return parseScraperExecution(execution)
 }
 
@@ -211,12 +208,9 @@ export async function fetchSharedListFast(
   tmdbMode: TmdbMode = 'none',
 ): Promise<SharedListResult> {
   const shareUrl = buildSharedListUrl(settings)
-  const execution = await requestScraperExecution({
-    body: {
-      url: shareUrl.toString(),
-      tmdbMode,
-    },
-  })
+  const body: Record<string, unknown> = { url: shareUrl.toString(), tmdbMode }
+  if (settings.plexToken) body.plexToken = settings.plexToken
+  const execution = await requestScraperExecution({ body })
   return parseScraperExecution(execution)
 }
 
