@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 const METADATA_BASE_URL = 'https://metadata.provider.plex.tv'
+const DISCOVER_BASE_URL = 'https://discover.provider.plex.tv'
 const WATCH_BASE_URL = 'https://watch.plex.tv'
 const TMDB_API_BASE_URL = 'https://api.themoviedb.org/3'
 const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p'
@@ -1639,7 +1640,7 @@ async function fetchPlexWatchlistItems(plexToken, log) {
   const allItems = []
 
   while (true) {
-    const url = `${METADATA_BASE_URL}/library/sections/watchlist/all?X-Plex-Container-Start=${offset}&X-Plex-Container-Size=${pageSize}`
+    const url = `${DISCOVER_BASE_URL}/library/sections/watchlist/all?X-Plex-Container-Start=${offset}&X-Plex-Container-Size=${pageSize}`
     log(`Fetching watchlist page offset=${offset}`)
 
     const response = await fetch(url, { headers })
