@@ -1578,13 +1578,13 @@ async function v2ScrapeListWithFetch(shareUrl, warnings, log, plexToken) {
   try {
     parsed = parsePublicListHtml(htmlText)
   } catch (parseError) {
-    if (!plexToken) {
-      throw new Error(
-        "This list couldn't be loaded. It may be private — sign in with Plex and try again, or make the list public.",
-      )
-    }
+    const parseMessage = parseError instanceof Error ? parseError.message : String(parseError)
 
-    throw parseError
+    throw new Error(
+      plexToken
+        ? `The share page loaded but could not be parsed, so Plex has likely changed its page structure (${parseMessage}).`
+        : `The share page loaded but could not be parsed. The list may be private, or Plex has changed its page structure (${parseMessage}).`,
+    )
   }
 
   const preferredAuth = plexToken
@@ -1724,6 +1724,347 @@ async function fetchPlexWatchlistItems(plexToken, log) {
 
   log(`Fetched ${allItems.length} watchlist items`)
   return allItems.map((item) => mapWatchlistApiItem(item, plexToken)).filter(Boolean)
+}
+
+const COMMUNITY_API_URL = 'https://community.plex.tv/api'
+const COMMUNITY_PAGE_SIZE = 100
+const COMMUNITY_MAX_PAGES = 60
+const COMMUNITY_MAX_RETRIES = 3
+const DISCOVER_HYDRATE_CONCURRENCY = 6
+
+const COMMUNITY_LIST_QUERY_RICH = `
+  query PlexListPickerCustomList($slug: String!, $username: String!, $first: PaginationInt!, $after: String) {
+    customListBySlug(slug: $slug, username: $username) {
+      title
+      metadataItems(first: $first, after: $after) {
+        nodes { id title type year }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+`
+
+const COMMUNITY_LIST_QUERY_MINIMAL = `
+  query PlexListPickerCustomList($slug: String!, $username: String!, $first: PaginationInt!, $after: String) {
+    customListBySlug(slug: $slug, username: $username) {
+      metadataItems(first: $first, after: $after) {
+        nodes { id }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+`
+
+function parseShareListParts(shareUrl) {
+  const segments = shareUrl.pathname.split('/').filter(Boolean)
+
+  if (segments.length < 4 || segments[0] !== 'u' || segments[2] !== 'lists') {
+    return null
+  }
+
+  const username = decodeURIComponent(segments[1])
+  const slug = decodeURIComponent(segments[3])
+
+  if (!username || !slug) {
+    return null
+  }
+
+  return { username, slug }
+}
+
+function readRetryAfterMs(response) {
+  const headerValue = response.headers.get('retry-after')
+
+  if (!headerValue) {
+    return 0
+  }
+
+  const seconds = Number(headerValue)
+
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(seconds * 1000, 15_000)
+  }
+
+  const retryDate = Date.parse(headerValue)
+
+  if (Number.isFinite(retryDate)) {
+    return Math.min(Math.max(retryDate - Date.now(), 0), 15_000)
+  }
+
+  return 0
+}
+
+function sleep(durationMs) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, durationMs)
+  })
+}
+
+async function communityGraphqlRequest(query, variables, token, log) {
+  let lastError = null
+
+  for (let attempt = 0; attempt <= COMMUNITY_MAX_RETRIES; attempt += 1) {
+    const response = await fetch(COMMUNITY_API_URL, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json',
+        'user-agent': V2_DEFAULT_USER_AGENT,
+        'x-plex-token': token,
+        'x-plex-client-identifier': 'plex-list-picker-web',
+        'x-plex-product': 'Plex List Picker',
+      },
+      body: JSON.stringify({ query, variables }),
+    })
+
+    if (response.status === 429 && attempt < COMMUNITY_MAX_RETRIES) {
+      const waitMs = readRetryAfterMs(response) || 1000 * 2 ** attempt
+      log(`Plex community API rate limited; retrying in ${waitMs}ms.`)
+      await sleep(waitMs)
+      continue
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(
+        'Plex rejected the request for this list. It may be private — sign in with Plex and try again, or make the list public.',
+      )
+    }
+
+    if (!response.ok) {
+      const body = (await response.text()).replace(/\s+/g, ' ').trim()
+      lastError = new Error(
+        `Plex community API returned ${response.status}${body ? `: ${body.slice(0, 200)}` : '.'}`,
+      )
+
+      if (attempt < COMMUNITY_MAX_RETRIES && response.status >= 500) {
+        await sleep(1000 * 2 ** attempt)
+        continue
+      }
+
+      throw lastError
+    }
+
+    const payload = await response.json()
+
+    if (Array.isArray(payload?.errors) && payload.errors.length) {
+      const messages = payload.errors
+        .map((entry) => (typeof entry?.message === 'string' ? entry.message : ''))
+        .filter(Boolean)
+        .join('; ')
+
+      throw new Error(`Plex community API error: ${messages || 'unknown GraphQL error'}`)
+    }
+
+    return payload?.data ?? null
+  }
+
+  throw lastError ?? new Error('Plex community API request failed.')
+}
+
+async function fetchCommunityListNodes(parts, token, log) {
+  const queries = [
+    { name: 'rich', text: COMMUNITY_LIST_QUERY_RICH },
+    { name: 'minimal', text: COMMUNITY_LIST_QUERY_MINIMAL },
+  ]
+
+  let lastError = null
+
+  for (const query of queries) {
+    try {
+      const nodes = []
+      let cursor = null
+      let listTitle = ''
+
+      for (let page = 0; page < COMMUNITY_MAX_PAGES; page += 1) {
+        const data = await communityGraphqlRequest(
+          query.text,
+          {
+            slug: parts.slug,
+            username: parts.username,
+            first: COMMUNITY_PAGE_SIZE,
+            after: cursor,
+          },
+          token,
+          log,
+        )
+
+        const list = data?.customListBySlug
+
+        if (!list) {
+          throw new Error(
+            'Plex did not return a list for this link. It may be private, renamed, or removed.',
+          )
+        }
+
+        if (!listTitle && typeof list.title === 'string') {
+          listTitle = list.title
+        }
+
+        const pageNodes = Array.isArray(list.metadataItems?.nodes)
+          ? list.metadataItems.nodes
+          : []
+
+        nodes.push(...pageNodes)
+
+        const pageInfo = list.metadataItems?.pageInfo
+
+        if (!pageInfo?.hasNextPage || !pageInfo?.endCursor || !pageNodes.length) {
+          break
+        }
+
+        cursor = pageInfo.endCursor
+      }
+
+      log(`Plex community API returned ${nodes.length} list items via ${query.name} query.`)
+
+      return { nodes, listTitle }
+    } catch (caughtError) {
+      lastError = caughtError
+
+      // A schema mismatch on the richer query is worth retrying with the
+      // minimal selection set; auth and "no such list" failures are not.
+      const message = caughtError instanceof Error ? caughtError.message : ''
+      const isSchemaError = message.includes('Plex community API error:')
+
+      if (query.name === 'rich' && isSchemaError) {
+        log('Rich community list query failed; retrying with the minimal selection set.')
+        continue
+      }
+
+      throw caughtError
+    }
+  }
+
+  throw lastError ?? new Error('Plex community API request failed.')
+}
+
+function mapCommunityNodeFallback(node) {
+  const id = typeof node?.id === 'string' ? node.id : ''
+  const title = typeof node?.title === 'string' ? node.title.trim() : ''
+
+  if (!id || !title) {
+    return null
+  }
+
+  const type = node.type === 'SHOW' || node.type === 'show' ? 'show' : 'movie'
+  const year = typeof node.year === 'number' ? node.year : null
+
+  return {
+    id,
+    ratingKey: id,
+    guid: '',
+    type,
+    title,
+    titleSort: title,
+    year,
+    summary: '',
+    tagline: '',
+    studio: '',
+    contentRating: '',
+    durationMinutes: null,
+    childCount: null,
+    thumb: '',
+    art: '',
+    genres: [],
+    rating: null,
+    audienceRating: null,
+    ratingSource: '',
+    audienceRatingSource: '',
+    imageSource: '',
+    originallyAvailableAt: year ? `${year}-01-01` : '',
+    watchlistedAt: '',
+  }
+}
+
+async function hydrateDiscoverItems(nodes, token, warnings, log) {
+  const results = new Array(nodes.length).fill(null)
+  let failureCount = 0
+
+  await mapWithConcurrency(nodes, DISCOVER_HYDRATE_CONCURRENCY, async (node, index) => {
+    const ratingKey = typeof node?.id === 'string' ? node.id : ''
+
+    if (!ratingKey) {
+      return
+    }
+
+    try {
+      const response = await fetch(`${DISCOVER_BASE_URL}/library/metadata/${ratingKey}`, {
+        headers: {
+          ...PLEX_HEADERS,
+          Accept: 'application/json',
+          'X-Plex-Token': token,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error(`Discover metadata returned ${response.status}.`)
+      }
+
+      const data = await response.json()
+      const metadata = Array.isArray(data?.MediaContainer?.Metadata)
+        ? data.MediaContainer.Metadata[0]
+        : null
+
+      if (!metadata) {
+        throw new Error('Discover metadata response contained no items.')
+      }
+
+      results[index] = mapWatchlistApiItem(metadata, token)
+    } catch {
+      failureCount += 1
+      results[index] = mapCommunityNodeFallback(node)
+    }
+  })
+
+  if (failureCount) {
+    log(`Discover hydration failed for ${failureCount} of ${nodes.length} items.`)
+
+    if (failureCount === nodes.length) {
+      pushUniqueWarning(
+        warnings,
+        'Plex returned the list, but detailed metadata could not be loaded. Titles may be missing artwork and ratings.',
+      )
+    } else {
+      pushUniqueWarning(
+        warnings,
+        `Detailed metadata could not be loaded for ${failureCount} item(s).`,
+      )
+    }
+  }
+
+  return results.filter(Boolean)
+}
+
+async function fetchListViaCommunityApi(shareUrl, warnings, log, plexToken) {
+  const parts = parseShareListParts(shareUrl)
+
+  if (!parts) {
+    throw new Error(
+      'This link does not look like a Plex list share link (expected /u/<user>/lists/<list>).',
+    )
+  }
+
+  let token = plexToken
+
+  if (!token) {
+    const anonymousAuth = await v2CreateAnonymousAuth(log)
+    token = anonymousAuth.token
+  }
+
+  const { nodes } = await fetchCommunityListNodes(parts, token, log)
+
+  if (!nodes.length) {
+    return { mode: 'community-api', items: [], nextUrl: '', initialCount: 0 }
+  }
+
+  const items = await hydrateDiscoverItems(nodes, token, warnings, log)
+
+  return {
+    mode: 'community-api',
+    items,
+    nextUrl: '',
+    initialCount: items.length,
+  }
 }
 
 export default async ({ req, res, log, error }) => {
@@ -1870,7 +2211,46 @@ export default async ({ req, res, log, error }) => {
       readTmdbModeFromBody(req.body) ||
       'auto'
     const warnings = []
-    const scraped = await v2ScrapeListWithFetch(shareUrl, warnings, log, plexToken || undefined)
+    let scraped
+    let communityError = null
+
+    try {
+      scraped = await fetchListViaCommunityApi(shareUrl, warnings, log, plexToken || undefined)
+    } catch (caughtError) {
+      communityError = caughtError instanceof Error ? caughtError : new Error(String(caughtError))
+      log(`Plex community API path failed: ${communityError.message}`)
+    }
+
+    if (!scraped || !scraped.items.length) {
+      try {
+        const fallbackWarnings = []
+        const fallbackScraped = await v2ScrapeListWithFetch(
+          shareUrl,
+          fallbackWarnings,
+          log,
+          plexToken || undefined,
+        )
+
+        if (fallbackScraped.items.length || !scraped) {
+          scraped = fallbackScraped
+
+          for (const warning of fallbackWarnings) {
+            pushUniqueWarning(warnings, warning)
+          }
+        }
+      } catch (fallbackError) {
+        if (!scraped) {
+          const fallbackMessage =
+            fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+
+          throw new Error(
+            communityError
+              ? `${communityError.message} (Legacy share-page fallback also failed: ${fallbackMessage})`
+              : fallbackMessage,
+          )
+        }
+      }
+    }
 
     if (scraped.nextUrl && scraped.items.length <= scraped.initialCount) {
       pushUniqueWarning(

@@ -33,7 +33,10 @@ Two-part system: a static React SPA frontend and an Appwrite Function backend. T
 ### Backend (`appwrite-functions/plexlists-scraper/`)
 
 - Deployed separately to Appwrite (function ID `plexlists_scraper`, project `69876eae003275d80ff8`, endpoint `https://sfo.cloud.appwrite.io/v1`).
-- `index.js` handles two routes: default (scrape a share URL) and `/tmdb-enrich` (enrich already-scraped items). Constants worth knowing: `TMDB_MAX_LOOKUPS = 40` per enrichment call, `TMDB_LOOKUP_CONCURRENCY = 6`, scroll timeouts `BROWSER_SCRAPE_TIMEOUT_MS = 45s`.
+- `index.js` handles three routes: default (load a share URL), `/tmdb-enrich` (enrich already-loaded items), and `/watchlist` (signed-in watchlist via `discover.provider.plex.tv`). Constants worth knowing: `TMDB_MAX_LOOKUPS = 40` per enrichment call, `TMDB_LOOKUP_CONCURRENCY = 6`, scroll timeouts `BROWSER_SCRAPE_TIMEOUT_MS = 45s`.
+- **Share lists are read via the Plex community GraphQL API first** (`https://community.plex.tv/api`, `customListBySlug(slug, username)`), paginated at `COMMUNITY_PAGE_SIZE = 100` with `429`/`Retry-After` backoff. The share URL `/u/<username>/lists/<slug>` supplies both arguments. Each returned node id is hydrated via `GET discover.provider.plex.tv/library/metadata/<id>` at `DISCOVER_HYDRATE_CONCURRENCY = 6`; hydration failures degrade to the fields GraphQL already returned. Auth uses the caller's Plex token when signed in, otherwise an anonymous token from `plex.tv/api/v2/users/anonymous`.
+- The old HTML/Next.js-flight scraper (`v2ScrapeListWithFetch` → `parsePublicListHtml`) is now only a **fallback** used when the GraphQL path errors or returns nothing. It parses `self.__next_f` chunks for a `"list":[` marker and is inherently brittle to Plex frontend redesigns — a Plex Lists redesign is what broke it. Don't invest in it; fix the GraphQL path instead.
+- `legacyHandler` and `scrapeListWithBrowser` (Playwright) are dead code — not exported, and `playwright-core` is not in the function's `package.json`.
 - TMDB credentials live as Appwrite function env vars (`TMDB_API_READ_ACCESS_TOKEN` preferred, `TMDB_API_KEY` fallback). Redeploy the function after changing them.
 - Modifying `index.js` does not affect the running backend until the function is redeployed to Appwrite.
 
